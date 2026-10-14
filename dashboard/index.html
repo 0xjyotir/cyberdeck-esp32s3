@@ -53,14 +53,40 @@
     </header>
 
     <div class="flex flex-1 overflow-hidden">
-        <aside class="w-72 bg-cyber-panel border-r border-cyber-border flex flex-col p-4 space-y-2">
-            <div class="text-xs text-gray-500 uppercase tracking-wider mb-2 px-2">Subsystems // 01_wifi</div>
-            <button onclick="switchModule('1.1')" class="sidebar-btn w-full text-left px-4 py-3 rounded bg-cyber-border/50 text-cyber-cyan border border-cyber-cyan/30 text-sm transition">1.1 Wi-Fi Scan</button>
-            <button onclick="switchModule('1.2')" class="sidebar-btn w-full text-left px-4 py-3 rounded text-gray-400 hover:bg-cyber-border/30 hover:text-gray-200 text-sm transition">1.2 Wardriving Logger</button>
-            <button onclick="switchModule('1.3')" class="sidebar-btn w-full text-left px-4 py-3 rounded text-gray-400 hover:bg-cyber-border/30 hover:text-gray-200 text-sm transition">1.3 Promiscuous Sniffer</button>
-            <button onclick="switchModule('1.4')" class="sidebar-btn w-full text-left px-4 py-3 rounded text-gray-400 hover:bg-cyber-border/30 hover:text-gray-200 text-sm transition">1.4 Network Discovery</button>
-            <button onclick="switchModule('1.5')" class="sidebar-btn w-full text-left px-4 py-3 rounded text-gray-400 hover:bg-cyber-border/30 hover:text-gray-200 text-sm transition">1.5 AP Hosting</button>
-            <button onclick="switchModule('1.6')" class="sidebar-btn w-full text-left px-4 py-3 rounded text-gray-400 hover:bg-cyber-border/30 hover:text-gray-200 text-sm transition">1.6 Frame Lab Testing</button>
+        <aside class="w-72 bg-cyber-panel border-r border-cyber-border flex flex-col p-4 space-y-4 overflow-y-auto">
+            
+            <!-- Subsystem 01: WiFi -->
+            <div>
+                <button onclick="toggleDropdown('wifi-section', 'wifi-arrow')" class="w-full flex justify-between items-center text-xs text-cyber-cyan uppercase tracking-wider mb-2 px-2 py-1 font-bold hover:bg-cyber-border/20 rounded">
+                    <span>Subsystems // 01_wifi</span>
+                    <span id="wifi-arrow" class="transform transition-transform duration-200">▼</span>
+                </button>
+                <div id="wifi-section" class="space-y-1 pl-2">
+                    <button onclick="switchModule('1.1')" class="sidebar-btn w-full text-left px-3 py-2 rounded bg-cyber-border/50 text-cyber-cyan border border-cyber-cyan/30 text-xs transition">1.1 Wi-Fi Scan</button>
+                    <button onclick="switchModule('1.2')" class="sidebar-btn w-full text-left px-3 py-2 rounded text-gray-400 hover:bg-cyber-border/30 hover:text-gray-200 text-xs transition">1.2 Wardriving Logger</button>
+                    <button onclick="switchModule('1.3')" class="sidebar-btn w-full text-left px-3 py-2 rounded text-gray-400 hover:bg-cyber-border/30 hover:text-gray-200 text-xs transition">1.3 Promiscuous Sniffer</button>
+                    <button onclick="switchModule('1.4')" class="sidebar-btn w-full text-left px-3 py-2 rounded text-gray-400 hover:bg-cyber-border/30 hover:text-gray-200 text-xs transition">1.4 Network Discovery</button>
+                    <button onclick="switchModule('1.5')" class="sidebar-btn w-full text-left px-3 py-2 rounded text-gray-400 hover:bg-cyber-border/30 hover:text-gray-200 text-xs transition">1.5 AP Hosting</button>
+                    <button onclick="switchModule('1.6')" class="sidebar-btn w-full text-left px-3 py-2 rounded text-gray-400 hover:bg-cyber-border/30 hover:text-gray-200 text-xs transition">1.6 Frame Lab Testing</button>
+                </div>
+            </div>
+
+            <!-- Subsystem 02: BLE -->
+            <div>
+                <button onclick="toggleDropdown('ble-section', 'ble-arrow')" class="w-full flex justify-between items-center text-xs text-cyber-magenta uppercase tracking-wider mb-2 px-2 py-1 font-bold hover:bg-cyber-border/20 rounded">
+                    <span>Subsystems // 02_ble</span>
+                    <span id="ble-arrow" class="transform transition-transform duration-200 -rotate-90">▼</span>
+                </button>
+                <div id="ble-section" class="space-y-1 pl-2 hidden">
+                    <button onclick="switchModule('2.1')" class="sidebar-btn w-full text-left px-3 py-2 rounded text-gray-400 hover:bg-cyber-border/30 hover:text-gray-200 text-xs transition">2.1 BLE Scan</button>
+                    <button onclick="switchModule('2.2')" class="sidebar-btn w-full text-left px-3 py-2 rounded text-gray-400 hover:bg-cyber-border/30 hover:text-gray-200 text-xs transition">2.2 GATT Services</button>
+                    <button onclick="switchModule('2.3')" class="sidebar-btn w-full text-left px-3 py-2 rounded text-gray-400 hover:bg-cyber-border/30 hover:text-gray-200 text-xs transition">2.3 Advertisement Sniffing</button>
+                    <button onclick="switchModule('2.4')" class="sidebar-btn w-full text-left px-3 py-2 rounded text-gray-400 hover:bg-cyber-border/30 hover:text-gray-200 text-xs transition">2.4 Custom Beacons</button>
+                    <button onclick="switchModule('2.5')" class="sidebar-btn w-full text-left px-3 py-2 rounded text-gray-400 hover:bg-cyber-border/30 hover:text-gray-200 text-xs transition">2.5 GATT Exploration</button>
+                    <button onclick="switchModule('2.6')" class="sidebar-btn w-full text-left px-3 py-2 rounded text-gray-400 hover:bg-cyber-border/30 hover:text-gray-200 text-xs transition">2.6 Device Testing</button>
+                </div>
+            </div>
+
         </aside>
 
         <main class="flex-1 p-6 overflow-y-auto flex flex-col space-y-6">
@@ -81,7 +107,7 @@
                     <div class="overflow-x-auto flex-1 border border-cyber-border/50 rounded">
                         <table class="w-full text-left border-collapse">
                             <thead>
-                                <tr class="bg-cyber-border/30 text-xs text-cyber-cyan border-b border-cyber-border">
+                                <tr id="table-headers" class="bg-cyber-border/30 text-xs text-cyber-cyan border-b border-cyber-border">
                                     <th class="p-3">SSID / Target</th>
                                     <th class="p-3">MAC / BSSID</th>
                                     <th class="p-3">CH</th>
@@ -112,6 +138,19 @@
         let reader;
         let inputDone;
         let currentModule = "1.1";
+
+        function toggleDropdown(sectionId, arrowId) {
+            const section = document.getElementById(sectionId);
+            const arrow = document.getElementById(arrowId);
+            section.classList.toggle('hidden');
+            if (section.classList.contains('hidden')) {
+                arrow.classList.remove('rotate-0');
+                arrow.classList.add('-rotate-90');
+            } else {
+                arrow.classList.remove('-rotate-90');
+                arrow.classList.add('rotate-0');
+            }
+        }
 
         async function toggleSerialConnection() {
             if (port) {
@@ -221,21 +260,33 @@
             }
             const tr = document.createElement('tr');
             tr.className = "hover:bg-cyber-border/20 border-b border-cyber-border/30";
-            tr.innerHTML = `
-                <td class="p-3 font-bold text-cyber-cyan">${data.ssid || 'Hidden'}</td>
-                <td class="p-3 text-gray-400">${data.bssid || 'N/A'}</td>
-                <td class="p-3 text-gray-300">${data.ch || '-'}</td>
-                <td class="p-3 text-cyber-yellow">${data.rssi || '-'} dBm</td>
-            `;
+
+            // Format table dynamically based on active module category
+            if (currentModule.startsWith("1.")) {
+                tr.innerHTML = `
+                    <td class="p-3 font-bold text-cyber-cyan">${data.ssid || 'Hidden'}</td>
+                    <td class="p-3 text-gray-400">${data.bssid || 'N/A'}</td>
+                    <td class="p-3 text-gray-300">${data.ch || '-'}</td>
+                    <td class="p-3 text-cyber-yellow">${data.rssi || '-'} dBm</td>
+                `;
+            } else {
+                // BLE modules telemetry rendering
+                tr.innerHTML = `
+                    <td class="p-3 font-bold text-cyber-magenta">${data.name || data.addr || 'BLE Device'}</td>
+                    <td class="p-3 text-gray-400 text-xs">${data.uuid || data.service || 'N/A'}</td>
+                    <td class="p-3 text-gray-300">${data.rssi ? data.rssi + ' dBm' : (data.canRead !== undefined ? (data.canRead ? 'READ' : 'LOCKED') : '-')}</td>
+                    <td class="p-3 text-cyber-cyan text-xs truncate max-w-[150px]">${data.value_hex || data.payload || data.status || 'Active'}</td>
+                `;
+            }
             tbody.insertBefore(tr, tbody.firstChild);
         }
 
         function switchModule(modId) {
             currentModule = modId;
             document.querySelectorAll('.sidebar-btn').forEach(btn => {
-                btn.className = "sidebar-btn w-full text-left px-4 py-3 rounded text-gray-400 hover:bg-cyber-border/30 hover:text-gray-200 text-sm transition";
+                btn.className = "sidebar-btn w-full text-left px-3 py-2 rounded text-gray-400 hover:bg-cyber-border/30 hover:text-gray-200 text-xs transition";
             });
-            event.currentTarget.className = "sidebar-btn w-full text-left px-4 py-3 rounded bg-cyber-border/50 text-cyber-cyan border border-cyber-cyan/30 text-sm transition";
+            event.currentTarget.className = "sidebar-btn w-full text-left px-3 py-2 rounded bg-cyber-border/50 text-cyber-cyan border border-cyber-cyan/30 text-xs transition";
             
             const titles = {
                 '1.1': 'MODULE 1.1: ACTIVE WIFI SCANNER',
@@ -243,7 +294,13 @@
                 '1.3': 'MODULE 1.3: PROMISCUOUS SNIFFER',
                 '1.4': 'MODULE 1.4: NETWORK DISCOVERY',
                 '1.5': 'MODULE 1.5: AP HOSTING',
-                '1.6': 'MODULE 1.6: FRAME LAB TESTING'
+                '1.6': 'MODULE 1.6: FRAME LAB TESTING',
+                '2.1': 'MODULE 2.1: BLE SCAN & FINGERPRINTING',
+                '2.2': 'MODULE 2.2: GATT SERVICE ENUMERATION',
+                '2.3': 'MODULE 2.3: ADVERTISEMENT SNIFFER',
+                '2.4': 'MODULE 2.4: CUSTOM BEACON SPAMMER',
+                '2.5': 'MODULE 2.5: GATT EXPLORATION & VALUE READER',
+                '2.6': 'MODULE 2.6: BLE DEVICE STRESS TESTING'
             };
             const descs = {
                 '1.1': 'Scans local airspace for active BSSIDs, SSIDs, channels, and RSSI metrics.',
@@ -251,10 +308,36 @@
                 '1.3': 'Captures raw 802.11 management and data frames in promiscuous mode.',
                 '1.4': 'Discovers connected clients and active hosts on the target network.',
                 '1.5': 'Hosts an administrative Access Point for localized web control.',
-                '1.6': 'Injects custom test frames and verifies injection success rates.'
+                '1.6': 'Injects custom test frames and verifies injection success rates.',
+                '2.1': 'Discovers nearby BLE peripherals, MAC addresses, RSSI, and mfg data.',
+                '2.2': 'Enumerates GATT services, characteristic UUIDs, and permission flags.',
+                '2.3': 'Intercepts raw low-level advertisement payloads and hex packets.',
+                '2.4': 'Broadcasts custom beacon frames for range and scanner verification.',
+                '2.5': 'Connects to devices, inspects characteristics, and dumps live hex values.',
+                '2.6': 'Measures connection handshake latencies and stress-tests targets.'
             };
+
+            // Update dynamic table column headers based on module group
+            const headerRow = document.getElementById('table-headers');
+            if (modId.startsWith("1.")) {
+                headerRow.innerHTML = `
+                    <th class="p-3">SSID / Target</th>
+                    <th class="p-3">MAC / BSSID</th>
+                    <th class="p-3">CH</th>
+                    <th class="p-3">RSSI</th>
+                `;
+            } else {
+                headerRow.innerHTML = `
+                    <th class="p-3">Target / Name</th>
+                    <th class="p-3">UUID / Addr</th>
+                    <th class="p-3">State / RSSI</th>
+                    <th class="p-3">Payload / Status</th>
+                `;
+            }
+
             document.getElementById('module-title').innerText = titles[modId];
             document.getElementById('module-desc').innerText = descs[modId];
+            document.getElementById('telemetry-table-body').innerHTML = `<tr><td colspan="4" class="p-4 text-center text-gray-600">Awaiting hardware telemetry stream...</td></tr>`;
             appendLog(`[system] Switched active context to Module ${modId}`);
         }
     </script>
