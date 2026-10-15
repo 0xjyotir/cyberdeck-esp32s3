@@ -1,7 +1,15 @@
 /*
  * Cyberdeck ESP32-S3 — Unified Firmware
  * ----------------------------------------------------------------
- * Merges: 01_wifi (1.1-1.6), 02_ble (2.1-2.6), 07_infrared (7.1-7.2)
+ * Merges: 01_wifi (1.1-1.6), 02_ble (2.1-2.6), 07_infrared (7.3, 7.4)
+ *
+ * IR module IDs follow the repo's real firmware/07_infrared/7.1-7.6
+ * sub-module layout (7.1 38khz_modulation, 7.2 pulse_learning,
+ * 7.3 signal_replay, 7.4 protocol_libraries, 7.5 signal_analysis,
+ * 7.6 led_circuit_tests — see firmware/07_infrared/). Only 7.3
+ * (replay) and 7.4 (protocol decode: NEC/Sony/RC5/RC6 via
+ * IRremoteESP8266) are implemented so far; 7.1/7.2/7.5/7.6 are not
+ * yet written.
  *
  * PROTOCOL (locked — see PROTOCOL.md for the full spec):
  *   Command  (host -> S3):  {"module":"1.1","action":"START"}
@@ -12,7 +20,7 @@
  *           Benoit Blanchon)
  *           IRremoteESP8266   (Library Manager -> "IRremoteESP8266"
  *           by David Conran / crankyoldgit) — needed for modules
- *           7.1 / 7.2 only.
+ *           7.3 / 7.4 only.
  *
  * NON-BLOCKING NOTES (read this before adding more modules):
  *   - All module polling is gated by millis(), not delay(). The
@@ -177,9 +185,9 @@ void startModule(const String& module) {
     pBLEScan->start(0, nullptr, false);  // continuous async scan for target discovery
   } else if (module == "2.4") {
     if (pAdvertising) pAdvertising->start();
-  } else if (module == "7.1") {
+  } else if (module == "7.4") {
     irrecv.enableIRIn();
-  } else if (module == "7.2") {
+  } else if (module == "7.3") {
     irsend.begin();
     // one-shot replay happens in the execution section below, then
     // the module auto-returns to NONE.
@@ -200,7 +208,7 @@ void stopModule() {
     if (pBLEScan) pBLEScan->stop();
   } else if (activeModule == "2.4" && pAdvertising) {
     pAdvertising->stop();
-  } else if (activeModule == "7.1") {
+  } else if (activeModule == "7.4") {
     irrecv.disableIRIn();
   } else if (activeModule == "1.1" && wifiScanState == WSCAN_RUNNING) {
     WiFi.scanDelete();
@@ -465,7 +473,8 @@ void loop() {
   }
 
   // --- INFRARED SUBSYSTEM ---
-  else if (activeModule == "7.1") {
+  // 7.4 = protocol_libraries (decode via IRremoteESP8266: NEC/Sony/RC5/RC6/...)
+  else if (activeModule == "7.4") {
     // irrecv.decode() is non-blocking: it just checks whether the
     // interrupt-driven capture buffer has a finished result.
     if (irrecv.decode(&irResults)) {
@@ -477,22 +486,22 @@ void loop() {
       telemetryDoc["data"]["protocol"] = typeToString(irResults.decode_type);
       telemetryDoc["data"]["value"] = uint64ToString(irResults.value, 16);
       telemetryDoc["data"]["bits"] = irResults.bits;
-      emitTelemetry("7.1", "ok");
+      emitTelemetry("7.4", "ok");
 
       irrecv.resume();
     }
   }
-  else if (activeModule == "7.2") {
-    // One-shot replay of the last 7.1 capture, then auto-return to NONE.
+  // 7.3 = signal_replay (one-shot replay of the last 7.4 capture)
+  else if (activeModule == "7.3") {
     if (!lastIrCaptured || lastIrProtocol == decode_type_t::UNKNOWN) {
-      emitError("7.2", "no_code_captured");
+      emitError("7.3", "no_code_captured");
     } else {
       irsend.send(lastIrProtocol, lastIrValue, lastIrBits);
       telemetryDoc["data"]["protocol"] = typeToString(lastIrProtocol);
       telemetryDoc["data"]["value"] = uint64ToString(lastIrValue, 16);
       telemetryDoc["data"]["bits"] = lastIrBits;
       telemetryDoc["data"]["action"] = "replayed";
-      emitTelemetry("7.2", "ok");
+      emitTelemetry("7.3", "ok");
     }
     activeModule = "NONE";
   }
