@@ -1,0 +1,91 @@
+/* Cyberdeck design tokens + shared pieces (welcome page and dashboard).
+   Blueprint direction: navy engineering grid paper, cyan linework, the board
+   drawn as a dashed schematic. Each subsystem owns one hue everywhere. */
+:root {
+  --bg: #060b16;
+  --bg2: #0a1120;
+  --panel: #0c1628;
+  --panel2: #0f1d35;
+  --line: #1b2d4d;
+  --line2: #2c4677;
+  --text: #dce8ff;
+  --mute: #8aa0c8;
+  --faint: #51658c;
+
+  --wifi: #58c6ff;
+  --ble: #a9b8ff;
+  --ir: #ffd27a;
+  --nrf: #7aa0ff;
+  --nfc: #8ef0d0;
+  --m5: #ff9e80;
+  --ok: #57e389;
+  --err: #ff6b6b;
+
+  /* Syne is kept for the hero headline only; everything else is Anthropic Sans
+     (Claude's UI face), falling back to Hanken Grotesk where it isn't installed. */
+  --display: "Syne", "Avenir Next", system-ui, sans-serif;
+  --body: "Anthropic Sans", "Hanken Grotesk", "Segoe UI", system-ui, sans-serif;
+  --mono: var(--body);
+  --code: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+
+  --radius: 10px;
+  --gutter: max(16px, 4vw);
+  color-scheme: dark;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 400 15px/1.6 var(--body);
+  -webkit-font-smoothing: antialiased;
+}
+a { color: inherit; }
+h1, h2, h3 { font-family: var(--body); font-weight: 700; line-height: 1.05; margin: 0; text-wrap: balance; }
+p { margin: 0; }
+code, .mono { font-family: var(--code); }
+:focus-visible { outline: 2px solid var(--wifi); outline-offset: 3px; border-radius: 4px; }
+
+.eyebrow {
+  font: 500 12px/1 var(--mono);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+
+/* Buttons */
+.btn {
+  display: inline-flex; align-items: center; gap: 10px;
+  padding: 11px 20px;
+  border-radius: 999px;
+  border: 1px solid var(--line2);
+  background: transparent;
+  color: var(--text);
+  font: 600 14px/1 var(--body);
+  letter-spacing: 0.01em;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background .2s, border-color .2s, color .2s, transform .2s;
+}
+.btn:hover { border-color: var(--text); }
+.btn:active { transform: translateY(1px); }
+.btn-primary { background: var(--wifi); color: #041325; border-color: var(--wifi); }
+.btn-primary:hover { background: #8ad8ff; border-color: #8ad8ff; }
+.btn .arrow { transition: transform .25s; }
+.btn:hover .arrow { transform: translateX(3px); }
+
+/* Brand mark */
+.brand { display: inline-flex; align-items: center; gap: 10px; text-decoration: none; }
+.brand-mark { display: grid; grid-template-columns: repeat(3, 5px); gap: 3px; }
+.brand-mark i { width: 5px; height: 5px; border-radius: 50%; background: var(--faint); }
+.brand-mark i:nth-child(1) { background: var(--wifi); }
+.brand-mark i:nth-child(5) { background: var(--ble); }
+.brand-mark i:nth-child(9) { background: var(--ir); }
+.brand-name { font: 700 17px/1 var(--body); letter-spacing: -0.01em; }
+.brand-name span { color: var(--mute); font-weight: 500; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+}

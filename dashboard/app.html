@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>Cyberdeck Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+  <link rel="stylesheet" href="assets/css/base.css">
+  <link rel="stylesheet" href="assets/css/dashboard.css">
+</head>
+<body class="app">
+
+  <header class="app-header">
+    <div class="left">
+      <span class="live-dot" id="live-dot"></span>
+      <h1>CYBERDECK<span>/s3</span></h1>
+    </div>
+    <div class="right">
+      <a class="home-link" href="index.html">&larr; Home</a>
+      <span class="conn-pill" id="conn-status">DISCONNECTED</span>
+      <button class="btn btn-primary" id="serial-btn" onclick="toggleSerial()">Connect USB serial</button>
+    </div>
+  </header>
+
+  <div class="app-body">
+    <aside class="sidebar">
+
+      <div class="s-wifi">
+        <button class="sub-toggle" aria-expanded="true" aria-controls="list-wifi" onclick="toggleSub(this)">
+          <span>Subsystem 1 · Wi-Fi</span><span class="chev">▾</span>
+        </button>
+        <div class="sub-list" id="list-wifi">
+          <button class="mod-btn" data-mod="1.1" onclick="switchModule('1.1', this)">1.1 Wi-Fi Scan</button>
+          <button class="mod-btn" data-mod="1.2" onclick="switchModule('1.2', this)">1.2 Wardriving Logger</button>
+          <button class="mod-btn" data-mod="1.3" onclick="switchModule('1.3', this)">1.3 Promiscuous Sniffer</button>
+          <button class="mod-btn" data-mod="1.4" onclick="switchModule('1.4', this)">1.4 Network Discovery</button>
+          <button class="mod-btn" data-mod="1.5" onclick="switchModule('1.5', this)">1.5 AP Hosting</button>
+          <button class="mod-btn" data-mod="1.6" onclick="switchModule('1.6', this)">1.6 Frame Lab Testing</button>
+        </div>
+      </div>
+
+      <div class="s-ble">
+        <button class="sub-toggle" aria-expanded="false" aria-controls="list-ble" onclick="toggleSub(this)">
+          <span>Subsystem 2 · BLE</span><span class="chev">▾</span>
+        </button>
+        <div class="sub-list" id="list-ble" hidden>
+          <button class="mod-btn" data-mod="2.1" onclick="switchModule('2.1', this)">2.1 BLE Scan</button>
+          <button class="mod-btn" data-mod="2.2" onclick="switchModule('2.2', this)">2.2 GATT Services</button>
+          <button class="mod-btn" data-mod="2.3" onclick="switchModule('2.3', this)">2.3 Advertisement Sniffing</button>
+          <button class="mod-btn" data-mod="2.4" onclick="switchModule('2.4', this)">2.4 Custom Beacons</button>
+          <button class="mod-btn" data-mod="2.5" onclick="switchModule('2.5', this)">2.5 GATT Exploration</button>
+          <button class="mod-btn" data-mod="2.6" onclick="switchModule('2.6', this)">2.6 Device Testing</button>
+        </div>
+      </div>
+
+      <div class="s-ir">
+        <button class="sub-toggle" aria-expanded="false" aria-controls="list-ir" onclick="toggleSub(this)">
+          <span>Subsystem 7 · Infrared</span><span class="chev">▾</span>
+        </button>
+        <div class="sub-list" id="list-ir" hidden>
+          <button class="mod-btn" data-mod="7.1" onclick="switchModule('7.1', this)">7.1 38kHz Carrier</button>
+          <button class="mod-btn" data-mod="7.2" onclick="switchModule('7.2', this)">7.2 Pulse Learning</button>
+          <button class="mod-btn" data-mod="7.3" onclick="switchModule('7.3', this)">7.3 Replay Last Capture</button>
+          <button class="mod-btn" data-mod="7.4" onclick="switchModule('7.4', this)">7.4 Protocol Decode</button>
+          <button class="mod-btn" data-mod="7.5" onclick="switchModule('7.5', this)">7.5 Signal Analysis</button>
+          <button class="mod-btn" data-mod="7.6" onclick="switchModule('7.6', this)">7.6 LED Circuit Test</button>
+        </div>
+      </div>
+
+    </aside>
+
+    <main class="main">
+      <section class="module-bar" id="module-bar">
+        <div>
+          <h2 id="module-title">MODULE 1.1: ACTIVE WIFI SCANNER</h2>
+          <p id="module-desc">Scans local airspace for active BSSIDs, SSIDs, channels, and RSSI metrics.</p>
+        </div>
+        <div class="module-actions">
+          <button class="act act-start" onclick="sendCommand('START')">Start module</button>
+          <button class="act act-stop" onclick="sendCommand('STOP')">Halt</button>
+        </div>
+      </section>
+
+      <div class="panels">
+        <section class="panel">
+          <h3>Live telemetry feed</h3>
+          <div class="table-scroll">
+            <table>
+              <thead><tr id="table-headers">
+                <th>SSID / Target</th><th>MAC / BSSID</th><th>CH</th><th>RSSI</th>
+              </tr></thead>
+              <tbody id="telemetry-body">
+                <tr><td colspan="4" class="empty">Awaiting hardware telemetry stream…</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="panel">
+          <h3>Hardware serial stream</h3>
+          <div class="console" id="console">
+            <div class="sys">[system] Dashboard interface ready. Connect USB serial to begin.</div>
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <script src="assets/js/dashboard.js"></script>
+</body>
+</html>
