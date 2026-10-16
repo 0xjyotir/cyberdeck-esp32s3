@@ -79,7 +79,7 @@ cyberdeck-esp32s3/
 │   ├── app.html                The dashboard itself (sidebar, telemetry table, serial console)
 │   └── assets/
 │       ├── css/                base.css (design tokens) · welcome.css · dashboard.css
-│       ├── js/                 board.js (hero animation) · dashboard.js (Web Serial + modules)
+│       ├── js/                 board.js (hero animation) · dashboard.js (Web Serial + modules) · resize.js (draggable panes)
 │       └── vendor/             anime.min.js (vendored; do not fetch from a CDN)
 ├── firmware/
 │   ├── unified_firmware/       ⭐ THE firmware to flash — every module in one JSON loop
@@ -240,6 +240,13 @@ user's own machine — nothing is sent to any server.
 - `app.html` — the dashboard: collapsible subsystem sidebar, a live telemetry
   table, and a raw serial console. "Connect USB serial" → pick a module → "Start
   module" / "Halt".
+- `assets/js/resize.js` — standalone pane resizing. Two `.resizer` handles in
+  `app.html` (sidebar↔main, telemetry↔serial) set `.sidebar` width and
+  `.panel-serial` height inline. A pane being enlarged is capped at **75%** of
+  its container along that axis; re-clamped on window resize; sizes persist in
+  `localStorage` (`cyberdeck.panes`); double-click / Enter resets; arrow keys
+  nudge. The column handle is hidden ≤820px (sidebar stacks). Doesn't touch
+  `dashboard.js`.
 - `assets/js/dashboard.js` — the Web Serial bridge and all module metadata. Key
   objects to edit when adding a module:
   - `TITLES` / `DESCS` — the module title + description text.

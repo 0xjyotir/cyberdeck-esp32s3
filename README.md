@@ -4,6 +4,8 @@
 
 <h1 align="center">Cyberdeck · ESP32-S3</h1>
 
+<p align="center"><em>by <strong>Sannidhya Biswas</strong> &amp; <strong>Jyotiraditya Kansal</strong></em></p>
+
 <p align="center">
   A pocket-size, open-source field deck for wireless and physical security auditing.<br>
   One ESP32-S3 listens across Wi-Fi, Bluetooth, 2.4&nbsp;GHz, NFC and infrared, and streams every reading to a live browser dashboard.
@@ -21,7 +23,7 @@
 
 **👉 [rronium.github.io/cyberdeck-esp32s3](https://rronium.github.io/cyberdeck-esp32s3/)**
 
-The welcome page introduces the deck; **Try it** opens the dashboard. Plug the ESP32-S3 into your computer over USB, click **Connect USB serial**, pick a module and press **Start module**.
+The welcome page introduces the deck; **Try it** opens the dashboard. Plug the ESP32-S3 into your computer over USB, click **Connect USB serial**, pick a module and press **Start module**. Drag the edges between panes (sidebar | telemetry | serial console) to resize them; no pane grows past 75% of the space, sizes are remembered, and double-clicking an edge resets it.
 
 > Web Serial only works in desktop **Chrome** or **Edge**. The page talks to the board plugged into *your* computer; nothing is sent to a server.
 
@@ -66,7 +68,7 @@ cyberdeck-esp32s3/
 │   ├── app.html                Dashboard: modules, telemetry table, serial console
 │   └── assets/
 │       ├── css/                base.css (design tokens) · welcome.css · dashboard.css
-│       ├── js/                 board.js (hero animation) · dashboard.js (Web Serial + modules)
+│       ├── js/                 board.js (hero animation) · dashboard.js (Web Serial + modules) · resize.js (draggable panes)
 │       └── vendor/             anime.min.js
 ├── firmware/
 │   ├── unified_firmware/       ⭐ The firmware to flash: every module behind one JSON command loop
