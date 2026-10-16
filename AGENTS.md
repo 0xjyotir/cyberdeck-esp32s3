@@ -79,7 +79,7 @@ cyberdeck-esp32s3/
 │   ├── app.html                The dashboard itself (sidebar, telemetry table, serial console)
 │   └── assets/
 │       ├── css/                base.css (design tokens) · welcome.css · dashboard.css
-│       ├── js/                 board.js (hero animation) · dashboard.js (Web Serial + modules) · resize.js (draggable panes)
+│       ├── js/                 board.js (hero animation) · dashboard.js (Web Serial + modules) · resize.js (draggable panes) · spectrum.js (4.1 graph)
 │       └── vendor/             anime.min.js (vendored; do not fetch from a CDN)
 ├── firmware/
 │   ├── unified_firmware/       ⭐ THE firmware to flash — every module in one JSON loop
@@ -247,6 +247,15 @@ user's own machine — nothing is sent to any server.
   `localStorage` (`cyberdeck.panes`); double-click / Enter resets; arrow keys
   nudge. The column handle is hidden ≤820px (sidebar stacks). Doesn't touch
   `dashboard.js`.
+- `assets/js/spectrum.js` — canvas spectrum view for nRF24 **4.1** (Bruce-style
+  per-channel bars, colour by level, peak hold, Wi-Fi 1/6/11 bands, waterfall
+  of the last 60 sweeps, hover tooltip). `window.Spectrum.{push,reset,show,note}`;
+  `dashboard.js` feeds it `{ch, level}` and hides the table while 4.1 is
+  active. Status/error lines (e.g. `nrf_not_found`) show as a note above it.
+  Raw JSON still prints in the serial console.
+- **Clear buttons** — telemetry header (`clearTelemetry()`, also resets the
+  spectrum) and serial header (`clearConsole()`). View-only; nothing is sent
+  to the board.
 - `assets/js/dashboard.js` — the Web Serial bridge and all module metadata. Key
   objects to edit when adding a module:
   - `TITLES` / `DESCS` — the module title + description text.
