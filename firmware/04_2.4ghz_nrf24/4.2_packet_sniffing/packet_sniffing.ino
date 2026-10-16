@@ -35,6 +35,8 @@ static const uint8_t  SNIFF_START_CH = 0;
 static const uint8_t  SNIFF_END_CH   = 83;             // 2400-2483 MHz
 static const uint64_t SNIFF_ADDR = 0xE7E7E7E7E7ULL;    // nRF24 factory-default pipe
 
+static const int BAUD_RATE = 115200;
+
 RF24 radio(NRF_CE_PIN, NRF_CSN_PIN);
 JsonDocument doc;
 
@@ -65,7 +67,7 @@ bool ensureNrf() {
 }
 
 void setup() {
-  Serial.begin(115200);
+  Serial.begin(BAUD_RATE);
   unsigned long start = millis();
   while (!Serial && (millis() - start < 4000)) delay(10);
   Serial.println("\n[+] nRF24 Module 4.2 Packet Sniffer ready.");
