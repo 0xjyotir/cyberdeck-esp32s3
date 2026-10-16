@@ -236,7 +236,13 @@ user's own machine — nothing is sent to any server.
 
 - `index.html` — welcome/landing page. Hero is an animated schematic ESP32-S3
   board (`assets/js/board.js`, using vendored anime.js) with six pulsing signal
-  lines: Wi-Fi, M5StickC Plus2, BLE, NFC, NRF24, IR.
+  lines: Wi-Fi, M5StickC Plus2, BLE, NFC, NRF24, IR. Below the subsystem cards is
+  **the field manual** (`#guide`): a per-function reference for all 24 implemented
+  functions, grouped by subsystem as native `<details>` accordions. Each entry
+  explains what the function does, defines every telemetry `data` field, shows an
+  example telemetry line, and links to that function's own standalone `.ino` on
+  GitHub (not the unified firmware). Pure HTML/CSS, no new JS. When you add or
+  change a module, add or update its accordion here too.
 - `app.html` — the dashboard: collapsible subsystem sidebar, a live telemetry
   table, and a raw serial console. "Connect USB serial" → pick a module → "Start
   module" / "Halt".

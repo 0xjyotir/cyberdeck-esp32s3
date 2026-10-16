@@ -134,6 +134,580 @@
     </div>
   </section>
 
+
+  <section class="guide wrap" id="guide">
+    <div class="head">
+      <p class="eyebrow">The field manual</p>
+      <h2>Every function, explained &mdash; and the exact code behind it.</h2>
+      <p class="guide-lede">A full reference for all 24 functions implemented across the five subsystems: what each one does, what every field of its telemetry means, a sample of the live output, and a link straight to that function&rsquo;s own standalone <code>.ino</code> sketch on GitHub. Tap any row to open it.</p>
+    </div>
+    <div class="guide-wrap">
+      <div class="guide-group c-wifi">
+        <div class="guide-group-head">
+          <span class="gg-num">01</span>
+          <h3>Wi-Fi · 802.11</h3>
+        </div>
+        <p class="gg-blurb">Six ways to read 2.4 GHz Wi-Fi airspace, from a polite active scan to raw promiscuous capture and frame injection on hardware you own.</p>
+        <div class="guide-list">
+        <details class="guide-item">
+          <summary>
+            <span class="gi-id">1.1</span>
+            <span class="gi-name">Active Wi-Fi scan</span>
+            <span class="gi-caret" aria-hidden="true">+</span>
+          </summary>
+          <div class="gi-body">
+            <p class="gi-what">Runs a standard active Wi-Fi scan: the ESP32 briefly tunes every 2.4 GHz channel and records every access point that answers a probe. It repeats every couple of seconds while the module is running, so the telemetry table keeps refreshing with whatever is in range.</p>
+            <p class="gi-sub">What the output means</p>
+            <dl class="gi-fields">
+              <div class="fld"><dt>ssid</dt><dd>The network's broadcast name. Shows <code>Hidden</code> when the AP cloaks its SSID.</dd></div>
+              <div class="fld"><dt>bssid</dt><dd>The access point's MAC address — a unique per-radio hardware ID, even when two APs share one SSID.</dd></div>
+              <div class="fld"><dt>ch</dt><dd>The 2.4 GHz channel (1–13) the AP is broadcasting on.</dd></div>
+              <div class="fld"><dt>rssi</dt><dd>Received signal strength in dBm. It is always negative; closer to 0 is stronger (e.g. −45 is right next to you, −85 is far or through walls).</dd></div>
+            </dl>
+            <p class="gi-sub">Example telemetry</p>
+            <pre class="gi-ex"><code>{&quot;module&quot;:&quot;1.1&quot;,&quot;status&quot;:&quot;ok&quot;,&quot;data&quot;:{&quot;ssid&quot;:&quot;HomeNet_5G&quot;,&quot;bssid&quot;:&quot;A4:2B:8C:1D:7E:F0&quot;,&quot;ch&quot;:6,&quot;rssi&quot;:-52}}</code></pre>
+            <a class="gi-src" href="https://github.com/RRonium/cyberdeck-esp32s3/blob/main/firmware/01_wifi/1.1_wifi_scan/wifi_scan/wifi_scan.ino" target="_blank" rel="noopener">
+              View this module&rsquo;s <code>.ino</code> source <span class="arrow">&rarr;</span>
+            </a>
+          </div>
+        </details>
+        <details class="guide-item">
+          <summary>
+            <span class="gi-id">1.2</span>
+            <span class="gi-name">Wardriving logger</span>
+            <span class="gi-caret" aria-hidden="true">+</span>
+          </summary>
+          <div class="gi-body">
+            <p class="gi-what">A continuous channel-monitor sweep meant to run while you walk or drive. It logs the same access-point attributes as the scanner, but is built to keep streaming so you can map which networks appear and drop out as you move.</p>
+            <p class="gi-sub">What the output means</p>
+            <dl class="gi-fields">
+              <div class="fld"><dt>ssid</dt><dd>Network name of each AP seen on the sweep.</dd></div>
+              <div class="fld"><dt>bssid</dt><dd>The AP's MAC address — the stable key you'd use to tell two APs apart in a log.</dd></div>
+              <div class="fld"><dt>ch</dt><dd>Channel the AP was heard on.</dd></div>
+              <div class="fld"><dt>rssi</dt><dd>Signal strength in dBm at the moment of capture; watching it rise and fall is how you tell you're getting closer to or further from a transmitter.</dd></div>
+            </dl>
+            <p class="gi-sub">Example telemetry</p>
+            <pre class="gi-ex"><code>{&quot;module&quot;:&quot;1.2&quot;,&quot;status&quot;:&quot;ok&quot;,&quot;data&quot;:{&quot;ssid&quot;:&quot;CafeGuest&quot;,&quot;bssid&quot;:&quot;DC:A6:32:04:11:9B&quot;,&quot;ch&quot;:11,&quot;rssi&quot;:-67}}</code></pre>
+            <a class="gi-src" href="https://github.com/RRonium/cyberdeck-esp32s3/blob/main/firmware/01_wifi/1.2_wardriving/wardriving/wardriving.ino" target="_blank" rel="noopener">
+              View this module&rsquo;s <code>.ino</code> source <span class="arrow">&rarr;</span>
+            </a>
+          </div>
+        </details>
+        <details class="guide-item">
+          <summary>
+            <span class="gi-id">1.3</span>
+            <span class="gi-name">Promiscuous sniffer</span>
+            <span class="gi-caret" aria-hidden="true">+</span>
+          </summary>
+          <div class="gi-body">
+            <p class="gi-what">Puts the Wi-Fi radio into promiscuous (monitor) mode and hops channels, capturing raw 802.11 management frames — including the probe requests that phones and laptops broadcast while looking for known networks. This is passive: it only listens.</p>
+            <p class="gi-sub">What the output means</p>
+            <dl class="gi-fields">
+              <div class="fld"><dt>ssid</dt><dd>Network name pulled from a captured frame, where one is present.</dd></div>
+              <div class="fld"><dt>bssid</dt><dd>The source MAC address in the raw frame — for a probe request this is the client device, not an AP.</dd></div>
+              <div class="fld"><dt>ch</dt><dd>The channel the sniffer was parked on when it caught the frame.</dd></div>
+              <div class="fld"><dt>rssi</dt><dd>Signal strength in dBm of the captured frame, i.e. how close the transmitting device is.</dd></div>
+            </dl>
+            <p class="gi-sub">Example telemetry</p>
+            <pre class="gi-ex"><code>{&quot;module&quot;:&quot;1.3&quot;,&quot;status&quot;:&quot;ok&quot;,&quot;data&quot;:{&quot;ssid&quot;:&quot;&quot;,&quot;bssid&quot;:&quot;3C:22:FB:8A:55:10&quot;,&quot;ch&quot;:1,&quot;rssi&quot;:-71}}</code></pre>
+            <a class="gi-src" href="https://github.com/RRonium/cyberdeck-esp32s3/blob/main/firmware/01_wifi/1.3_promiscuous_sniffing/promiscuous_sniffing/promiscuous_sniffing.ino" target="_blank" rel="noopener">
+              View this module&rsquo;s <code>.ino</code> source <span class="arrow">&rarr;</span>
+            </a>
+          </div>
+        </details>
+        <details class="guide-item">
+          <summary>
+            <span class="gi-id">1.4</span>
+            <span class="gi-name">Network / client discovery</span>
+            <span class="gi-caret" aria-hidden="true">+</span>
+          </summary>
+          <div class="gi-body">
+            <p class="gi-what">A detailed attribute sweep of the local wireless infrastructure. Where the basic scan just lists APs, this profiles each one — including its authentication/encryption type — so you can see at a glance which networks are open and which are secured.</p>
+            <p class="gi-sub">What the output means</p>
+            <dl class="gi-fields">
+              <div class="fld"><dt>ssid</dt><dd>Network name (or <code>Hidden</code> for a cloaked network).</dd></div>
+              <div class="fld"><dt>bssid</dt><dd>The access point's MAC address.</dd></div>
+              <div class="fld"><dt>ch</dt><dd>Operating channel of the AP.</dd></div>
+              <div class="fld"><dt>rssi</dt><dd>Signal strength in dBm. (The standalone sketch also prints the auth mode — OPEN / WEP / WPA-PSK / WPA2-PSK / WPA3-PSK — alongside each entry in its serial log.)</dd></div>
+            </dl>
+            <p class="gi-sub">Example telemetry</p>
+            <pre class="gi-ex"><code>{&quot;module&quot;:&quot;1.4&quot;,&quot;status&quot;:&quot;ok&quot;,&quot;data&quot;:{&quot;ssid&quot;:&quot;Office-WPA2&quot;,&quot;bssid&quot;:&quot;F0:9F:C2:3D:6A:88&quot;,&quot;ch&quot;:4,&quot;rssi&quot;:-58}}</code></pre>
+            <a class="gi-src" href="https://github.com/RRonium/cyberdeck-esp32s3/blob/main/firmware/01_wifi/1.4_network_discovery/network_discovery/network_discovery.ino" target="_blank" rel="noopener">
+              View this module&rsquo;s <code>.ino</code> source <span class="arrow">&rarr;</span>
+            </a>
+          </div>
+        </details>
+        <details class="guide-item">
+          <summary>
+            <span class="gi-id">1.5</span>
+            <span class="gi-name">AP hosting</span>
+            <span class="gi-caret" aria-hidden="true">+</span>
+          </summary>
+          <div class="gi-body">
+            <p class="gi-what">Turns the deck into its own access point (<code>Cyberdeck_AP</code>) and then reports the stations that connect to it. Useful as a controlled target you own — you can watch devices associate and read their link quality.</p>
+            <p class="gi-sub">What the output means</p>
+            <dl class="gi-fields">
+              <div class="fld"><dt>ssid</dt><dd>Carries the soft-AP's own gateway IP address once the access point is up (e.g. the address you'd point a browser at). The standalone sketch additionally lists each connected station's MAC and RSSI.</dd></div>
+            </dl>
+            <p class="gi-sub">Example telemetry</p>
+            <pre class="gi-ex"><code>{&quot;module&quot;:&quot;1.5&quot;,&quot;status&quot;:&quot;ok&quot;,&quot;data&quot;:{&quot;ssid&quot;:&quot;192.168.4.1&quot;,&quot;bssid&quot;:&quot;-&quot;,&quot;ch&quot;:1,&quot;rssi&quot;:0}}</code></pre>
+            <a class="gi-src" href="https://github.com/RRonium/cyberdeck-esp32s3/blob/main/firmware/01_wifi/1.5_ap_hosting/ap_hosting/ap_hosting.ino" target="_blank" rel="noopener">
+              View this module&rsquo;s <code>.ino</code> source <span class="arrow">&rarr;</span>
+            </a>
+          </div>
+        </details>
+        <details class="guide-item">
+          <summary>
+            <span class="gi-id">1.6</span>
+            <span class="gi-name">Frame lab / injection test</span>
+            <span class="gi-caret" aria-hidden="true">+</span>
+          </summary>
+          <div class="gi-body">
+            <p class="gi-what">A lab bench for 802.11 frame injection: it transmits a hand-built test beacon frame on channel 1 and reports whether the transmit call succeeded. It's a capability check for the radio's injection path on a network you control — not a tool pointed at other people's devices.</p>
+            <p class="gi-sub">What the output means</p>
+            <dl class="gi-fields">
+              <div class="fld"><dt>ssid</dt><dd>Carries the transmit status string for each injected frame — i.e. confirmation that the test frame was broadcast on channel 1.</dd></div>
+            </dl>
+            <p class="gi-sub">Example telemetry</p>
+            <pre class="gi-ex"><code>{&quot;module&quot;:&quot;1.6&quot;,&quot;status&quot;:&quot;ok&quot;,&quot;data&quot;:{&quot;ssid&quot;:&quot;tx_ok ch1&quot;,&quot;bssid&quot;:&quot;-&quot;,&quot;ch&quot;:1,&quot;rssi&quot;:0}}</code></pre>
+            <a class="gi-src" href="https://github.com/RRonium/cyberdeck-esp32s3/blob/main/firmware/01_wifi/1.6_frame_lab_testing/frame_lab_testing/frame_lab_testing.ino" target="_blank" rel="noopener">
+              View this module&rsquo;s <code>.ino</code> source <span class="arrow">&rarr;</span>
+            </a>
+          </div>
+        </details>
+        </div>
+      </div>
+      <div class="guide-group c-ble">
+        <div class="guide-group-head">
+          <span class="gg-num">02</span>
+          <h3>Bluetooth LE</h3>
+        </div>
+        <p class="gg-blurb">Discover, fingerprint and interrogate BLE peripherals — advertisement sniffing, full GATT enumeration, live value reads and a connection stress test.</p>
+        <div class="guide-list">
+        <details class="guide-item">
+          <summary>
+            <span class="gi-id">2.1</span>
+            <span class="gi-name">BLE scan &amp; fingerprint</span>
+            <span class="gi-caret" aria-hidden="true">+</span>
+          </summary>
+          <div class="gi-body">
+            <p class="gi-what">An active BLE scan that discovers nearby Bluetooth Low Energy peripherals and fingerprints each one — the advertised name, its address and how strong the signal is. This is how you build a picture of what BLE devices are around you.</p>
+            <p class="gi-sub">What the output means</p>
+            <dl class="gi-fields">
+              <div class="fld"><dt>name</dt><dd>The device's advertised friendly name, or <code>&lt;Unnamed&gt;</code> if it doesn't broadcast one.</dd></div>
+              <div class="fld"><dt>addr</dt><dd>The BLE device address (MAC-style, six hex bytes) — the identifier you use to target a specific device later.</dd></div>
+              <div class="fld"><dt>rssi</dt><dd>Signal strength in dBm; closer to 0 means the device is nearer.</dd></div>
+              <div class="fld"><dt>uuid</dt><dd>Any service UUID the device advertises, which hints at what it is (e.g. a heart-rate or battery service).</dd></div>
+            </dl>
+            <p class="gi-sub">Example telemetry</p>
+            <pre class="gi-ex"><code>{&quot;module&quot;:&quot;2.1&quot;,&quot;status&quot;:&quot;ok&quot;,&quot;data&quot;:{&quot;name&quot;:&quot;Mi Band 7&quot;,&quot;addr&quot;:&quot;c4:9d: a1:22:0b:7e&quot;,&quot;rssi&quot;:-61,&quot;uuid&quot;:&quot;0000fee0-0000-1000-8000-00805f9b34fb&quot;}}</code></pre>
+            <a class="gi-src" href="https://github.com/RRonium/cyberdeck-esp32s3/blob/main/firmware/02_ble/2.1_ble_scan/ble_scan/ble_scan.ino" target="_blank" rel="noopener">
+              View this module&rsquo;s <code>.ino</code> source <span class="arrow">&rarr;</span>
+            </a>
+          </div>
+        </details>
+        <details class="guide-item">
+          <summary>
+            <span class="gi-id">2.2</span>
+            <span class="gi-name">GATT service enumeration</span>
+            <span class="gi-caret" aria-hidden="true">+</span>
+          </summary>
+          <div class="gi-body">
+            <p class="gi-what">Connects to a BLE peripheral and walks its GATT table, listing every service and characteristic it exposes along with their read/write permission flags. This is the map of what a device lets you talk to.</p>
+            <p class="gi-sub">What the output means</p>
+            <dl class="gi-fields">
+              <div class="fld"><dt>name</dt><dd>The connected peripheral's name.</dd></div>
+              <div class="fld"><dt>uuid</dt><dd>The UUID of each service / characteristic found — the address of a specific data point inside the device.</dd></div>
+              <div class="fld"><dt>rssi</dt><dd>Link signal strength in dBm during enumeration.</dd></div>
+              <div class="fld"><dt>payload</dt><dd>Carries the permission flags for the characteristic — whether it can be read and/or written (e.g. <code>READ</code> vs <code>LOCKED</code>).</dd></div>
+            </dl>
+            <p class="gi-sub">Example telemetry</p>
+            <pre class="gi-ex"><code>{&quot;module&quot;:&quot;2.2&quot;,&quot;status&quot;:&quot;ok&quot;,&quot;data&quot;:{&quot;name&quot;:&quot;Thermostat&quot;,&quot;uuid&quot;:&quot;00002a6e-0000-1000-8000-00805f9b34fb&quot;,&quot;rssi&quot;:-55,&quot;payload&quot;:&quot;READ&quot;}}</code></pre>
+            <a class="gi-src" href="https://github.com/RRonium/cyberdeck-esp32s3/blob/main/firmware/02_ble/2.2_ble_services/ble_services/ble_services.ino" target="_blank" rel="noopener">
+              View this module&rsquo;s <code>.ino</code> source <span class="arrow">&rarr;</span>
+            </a>
+          </div>
+        </details>
+        <details class="guide-item">
+          <summary>
+            <span class="gi-id">2.3</span>
+            <span class="gi-name">Advertisement sniffer</span>
+            <span class="gi-caret" aria-hidden="true">+</span>
+          </summary>
+          <div class="gi-body">
+            <p class="gi-what">A passive sniffer that captures the raw advertisement packets BLE devices continuously broadcast, dumping the payload bytes as hex. Nothing is connected to — it only listens to what's already in the air.</p>
+            <p class="gi-sub">What the output means</p>
+            <dl class="gi-fields">
+              <div class="fld"><dt>name</dt><dd>Advertised name if present.</dd></div>
+              <div class="fld"><dt>addr</dt><dd>The broadcasting device's address.</dd></div>
+              <div class="fld"><dt>rssi</dt><dd>Signal strength in dBm of the captured advertisement.</dd></div>
+              <div class="fld"><dt>payload</dt><dd>The raw advertisement payload as a hex string (or <code>None</code> if the packet carried no payload) — this is the unparsed manufacturer/service data the device is broadcasting.</dd></div>
+            </dl>
+            <p class="gi-sub">Example telemetry</p>
+            <pre class="gi-ex"><code>{&quot;module&quot;:&quot;2.3&quot;,&quot;status&quot;:&quot;ok&quot;,&quot;data&quot;:{&quot;name&quot;:&quot;&quot;,&quot;addr&quot;:&quot;7a:11:3e:9c:04:df&quot;,&quot;rssi&quot;:-74,&quot;payload&quot;:&quot;0201061AFF4C000215...&quot;}}</code></pre>
+            <a class="gi-src" href="https://github.com/RRonium/cyberdeck-esp32s3/blob/main/firmware/02_ble/2.3_ble_sniffing/ble_sniffing/ble_sniffing.ino" target="_blank" rel="noopener">
+              View this module&rsquo;s <code>.ino</code> source <span class="arrow">&rarr;</span>
+            </a>
+          </div>
+        </details>
+        <details class="guide-item">
+          <summary>
+            <span class="gi-id">2.4</span>
+            <span class="gi-name">Custom beacon broadcaster</span>
+            <span class="gi-caret" aria-hidden="true">+</span>
+          </summary>
+          <div class="gi-body">
+            <p class="gi-what">Broadcasts a custom BLE beacon from the deck so you can verify range and that a scanner (your phone, another deck) picks it up. It's a transmit-side test — the deck is the thing being discovered.</p>
+            <p class="gi-sub">What the output means</p>
+            <dl class="gi-fields">
+              <div class="fld"><dt>name</dt><dd>The beacon name the deck is advertising (e.g. <code>Cyberdeck-Spam</code>).</dd></div>
+              <div class="fld"><dt>uuid</dt><dd>The service UUID baked into the broadcast beacon.</dd></div>
+              <div class="fld"><dt>rssi</dt><dd>Reported signal context for the broadcast.</dd></div>
+              <div class="fld"><dt>payload</dt><dd>The beacon payload being advertised.</dd></div>
+            </dl>
+            <p class="gi-sub">Example telemetry</p>
+            <pre class="gi-ex"><code>{&quot;module&quot;:&quot;2.4&quot;,&quot;status&quot;:&quot;ok&quot;,&quot;data&quot;:{&quot;name&quot;:&quot;Cyberdeck-Spam&quot;,&quot;uuid&quot;:&quot;12345678-0000-1000-8000-00805f9b34fb&quot;,&quot;rssi&quot;:0,&quot;payload&quot;:&quot;active&quot;}}</code></pre>
+            <a class="gi-src" href="https://github.com/RRonium/cyberdeck-esp32s3/blob/main/firmware/02_ble/2.4_custom_beacons/custom_beacons/custom_beacons.ino" target="_blank" rel="noopener">
+              View this module&rsquo;s <code>.ino</code> source <span class="arrow">&rarr;</span>
+            </a>
+          </div>
+        </details>
+        <details class="guide-item">
+          <summary>
+            <span class="gi-id">2.5</span>
+            <span class="gi-name">GATT exploration + value read</span>
+            <span class="gi-caret" aria-hidden="true">+</span>
+          </summary>
+          <div class="gi-body">
+            <p class="gi-what">Goes a step beyond enumeration: it connects to a peripheral, finds every readable characteristic and actually reads back its live value, dumping it as hex. This is how you pull the current data a device is holding.</p>
+            <p class="gi-sub">What the output means</p>
+            <dl class="gi-fields">
+              <div class="fld"><dt>name</dt><dd>The connected device's name.</dd></div>
+              <div class="fld"><dt>uuid</dt><dd>The UUID of the characteristic that was read.</dd></div>
+              <div class="fld"><dt>payload</dt><dd>The live value of that characteristic as a hex string — the actual bytes stored on the device at read time (decode per the characteristic's spec to get a temperature, battery %, etc.).</dd></div>
+            </dl>
+            <p class="gi-sub">Example telemetry</p>
+            <pre class="gi-ex"><code>{&quot;module&quot;:&quot;2.5&quot;,&quot;status&quot;:&quot;ok&quot;,&quot;data&quot;:{&quot;name&quot;:&quot;BatterySvc&quot;,&quot;uuid&quot;:&quot;00002a19-0000-1000-8000-00805f9b34fb&quot;,&quot;payload&quot;:&quot;64&quot;}}</code></pre>
+            <a class="gi-src" href="https://github.com/RRonium/cyberdeck-esp32s3/blob/main/firmware/02_ble/2.5_gatt_exploration/gatt_exploration/gatt_exploration.ino" target="_blank" rel="noopener">
+              View this module&rsquo;s <code>.ino</code> source <span class="arrow">&rarr;</span>
+            </a>
+          </div>
+        </details>
+        <details class="guide-item">
+          <summary>
+            <span class="gi-id">2.6</span>
+            <span class="gi-name">Device connection stress test</span>
+            <span class="gi-caret" aria-hidden="true">+</span>
+          </summary>
+          <div class="gi-body">
+            <p class="gi-what">Repeatedly connects to and disconnects from a target peripheral and times each handshake, so you can measure how reliably and how fast a device accepts connections. Each attempt reports success or failure plus its latency.</p>
+            <p class="gi-sub">What the output means</p>
+            <dl class="gi-fields">
+              <div class="fld"><dt>name</dt><dd>The target device being tested (addr is also reported).</dd></div>
+              <div class="fld"><dt>uuid</dt><dd>Service context for the target.</dd></div>
+              <div class="fld"><dt>rssi</dt><dd>Link signal strength during the test.</dd></div>
+              <div class="fld"><dt>payload</dt><dd>Carries the per-attempt result — the connection latency in milliseconds on success, or a FAILED marker when a handshake doesn't complete.</dd></div>
+            </dl>
+            <p class="gi-sub">Example telemetry</p>
+            <pre class="gi-ex"><code>{&quot;module&quot;:&quot;2.6&quot;,&quot;status&quot;:&quot;ok&quot;,&quot;data&quot;:{&quot;name&quot;:&quot;Target&quot;,&quot;uuid&quot;:&quot;-&quot;,&quot;rssi&quot;:-60,&quot;payload&quot;:&quot;attempt 1: SUCCESS 212 ms&quot;}}</code></pre>
+            <a class="gi-src" href="https://github.com/RRonium/cyberdeck-esp32s3/blob/main/firmware/02_ble/2.6_ble_device_testing/ble_device_testing/ble_device_testing.ino" target="_blank" rel="noopener">
+              View this module&rsquo;s <code>.ino</code> source <span class="arrow">&rarr;</span>
+            </a>
+          </div>
+        </details>
+        </div>
+      </div>
+      <div class="guide-group c-nrf">
+        <div class="guide-group-head">
+          <span class="gg-num">04</span>
+          <h3>2.4 GHz · nRF24</h3>
+        </div>
+        <p class="gg-blurb">Survey the raw 2.4 GHz ISM band with an nRF24L01+ — spectrum energy, packet capture, address discovery and a lab transmitter for your own link tests. (Hardware-untested.)</p>
+        <div class="guide-list">
+        <details class="guide-item">
+          <summary>
+            <span class="gi-id">4.1</span>
+            <span class="gi-name">Spectrum scan</span>
+            <span class="gi-caret" aria-hidden="true">+</span>
+          </summary>
+          <div class="gi-body">
+            <p class="gi-what">Sweeps all 126 nRF24 channels across 2400–2525 MHz and samples how much carrier energy sits on each one (32 samples per channel per pass). On the dashboard this feeds the live spectrum graph — tall bars are busy frequencies (Wi-Fi, Bluetooth, other 2.4 GHz gear). It also doubles as the nRF24 wiring check: if the module isn't found you get <code>nrf_not_found</code>.</p>
+            <p class="gi-sub">What the output means</p>
+            <dl class="gi-fields">
+              <div class="fld"><dt>ch</dt><dd>The nRF24 channel number (0–125).</dd></div>
+              <div class="fld"><dt>mhz</dt><dd>That channel's frequency in MHz (2400 + channel).</dd></div>
+              <div class="fld"><dt>level</dt><dd>Energy reading for the channel on this pass, 0–32. Higher means more activity / a stronger carrier was detected on that frequency.</dd></div>
+            </dl>
+            <p class="gi-sub">Example telemetry</p>
+            <pre class="gi-ex"><code>{&quot;module&quot;:&quot;4.1&quot;,&quot;status&quot;:&quot;ok&quot;,&quot;data&quot;:{&quot;ch&quot;:76,&quot;mhz&quot;:2476,&quot;level&quot;:18}}</code></pre>
+            <a class="gi-src" href="https://github.com/RRonium/cyberdeck-esp32s3/blob/main/firmware/04_2.4ghz_nrf24/4.1_spectrum_scan/spectrum_scan/spectrum_scan.ino" target="_blank" rel="noopener">
+              View this module&rsquo;s <code>.ino</code> source <span class="arrow">&rarr;</span>
+            </a>
+          </div>
+        </details>
+        <details class="guide-item">
+          <summary>
+            <span class="gi-id">4.2</span>
+            <span class="gi-name">Packet sniffer</span>
+            <span class="gi-caret" aria-hidden="true">+</span>
+          </summary>
+          <div class="gi-body">
+            <p class="gi-what">Listens on the default pipe while hopping channels 0–83 and dumps any nRF24 payloads it catches as raw hex. This is the capture tool for seeing the actual bytes small 2.4 GHz devices (toys, some wireless peripherals) are sending.</p>
+            <p class="gi-sub">What the output means</p>
+            <dl class="gi-fields">
+              <div class="fld"><dt>ch</dt><dd>The channel the packet was captured on.</dd></div>
+              <div class="fld"><dt>addr</dt><dd>The pipe address the packet arrived on.</dd></div>
+              <div class="fld"><dt>len</dt><dd>Payload length in bytes.</dd></div>
+              <div class="fld"><dt>payload</dt><dd>The captured packet bytes as a hex string.</dd></div>
+            </dl>
+            <p class="gi-sub">Example telemetry</p>
+            <pre class="gi-ex"><code>{&quot;module&quot;:&quot;4.2&quot;,&quot;status&quot;:&quot;ok&quot;,&quot;data&quot;:{&quot;ch&quot;:42,&quot;addr&quot;:&quot;0xE7E7E7E7E7&quot;,&quot;len&quot;:8,&quot;payload&quot;:&quot;A1B2C3D4E5F60718&quot;}}</code></pre>
+            <a class="gi-src" href="https://github.com/RRonium/cyberdeck-esp32s3/blob/main/firmware/04_2.4ghz_nrf24/4.2_packet_sniffing/packet_sniffing.ino" target="_blank" rel="noopener">
+              View this module&rsquo;s <code>.ino</code> source <span class="arrow">&rarr;</span>
+            </a>
+          </div>
+        </details>
+        <details class="guide-item">
+          <summary>
+            <span class="gi-id">4.3</span>
+            <span class="gi-name">Address discovery</span>
+            <span class="gi-caret" aria-hidden="true">+</span>
+          </summary>
+          <div class="gi-body">
+            <p class="gi-what">Sniffs for the short preamble that precedes nRF24 packets and, by hopping the band, reports candidate pipe addresses it keeps seeing. It's how you find the address a device is using before you can sniff its packets in full.</p>
+            <p class="gi-sub">What the output means</p>
+            <dl class="gi-fields">
+              <div class="fld"><dt>ch</dt><dd>Channel where the candidate address was observed.</dd></div>
+              <div class="fld"><dt>addr</dt><dd>A candidate nRF24 pipe address recovered from the preamble sniff.</dd></div>
+              <div class="fld"><dt>hits</dt><dd>How many times that address was seen — more hits means a more confident, real address rather than noise.</dd></div>
+            </dl>
+            <p class="gi-sub">Example telemetry</p>
+            <pre class="gi-ex"><code>{&quot;module&quot;:&quot;4.3&quot;,&quot;status&quot;:&quot;ok&quot;,&quot;data&quot;:{&quot;ch&quot;:17,&quot;addr&quot;:&quot;0xC2C2C2&quot;,&quot;hits&quot;:5}}</code></pre>
+            <a class="gi-src" href="https://github.com/RRonium/cyberdeck-esp32s3/blob/main/firmware/04_2.4ghz_nrf24/4.3_address_discovery/address_discovery.ino" target="_blank" rel="noopener">
+              View this module&rsquo;s <code>.ino</code> source <span class="arrow">&rarr;</span>
+            </a>
+          </div>
+        </details>
+        <details class="guide-item">
+          <summary>
+            <span class="gi-id">4.4</span>
+            <span class="gi-name">Protocol analysis</span>
+            <span class="gi-caret" aria-hidden="true">+</span>
+          </summary>
+          <div class="gi-body">
+            <p class="gi-what">Captures packets and, per packet, reports the length and data rate and makes a heuristic guess at whether it looks like control traffic or data traffic — a first-pass characterisation of an unknown 2.4 GHz link.</p>
+            <p class="gi-sub">What the output means</p>
+            <dl class="gi-fields">
+              <div class="fld"><dt>ch</dt><dd>Channel of the analysed packet.</dd></div>
+              <div class="fld"><dt>addr</dt><dd>Pipe address the packet came from.</dd></div>
+              <div class="fld"><dt>len</dt><dd>Payload length in bytes.</dd></div>
+              <div class="fld"><dt>rate</dt><dd>The nRF24 data rate the link is using (e.g. 1 Mbps / 2 Mbps / 250 kbps).</dd></div>
+              <div class="fld"><dt>guess</dt><dd>A heuristic classification of the traffic — e.g. a short, regular packet reads as <em>control</em>, a longer one as <em>data</em>.</dd></div>
+            </dl>
+            <p class="gi-sub">Example telemetry</p>
+            <pre class="gi-ex"><code>{&quot;module&quot;:&quot;4.4&quot;,&quot;status&quot;:&quot;ok&quot;,&quot;data&quot;:{&quot;ch&quot;:33,&quot;addr&quot;:&quot;0xE7E7E7E7E7&quot;,&quot;len&quot;:4,&quot;rate&quot;:&quot;1Mbps&quot;,&quot;guess&quot;:&quot;control&quot;}}</code></pre>
+            <a class="gi-src" href="https://github.com/RRonium/cyberdeck-esp32s3/blob/main/firmware/04_2.4ghz_nrf24/4.4_protocol_analysis/protocol_analysis.ino" target="_blank" rel="noopener">
+              View this module&rsquo;s <code>.ino</code> source <span class="arrow">&rarr;</span>
+            </a>
+          </div>
+        </details>
+        <details class="guide-item">
+          <summary>
+            <span class="gi-id">4.5</span>
+            <span class="gi-name">Packet storage</span>
+            <span class="gi-caret" aria-hidden="true">+</span>
+          </summary>
+          <div class="gi-body">
+            <p class="gi-what">Buffers captured packets into an in-RAM ring buffer (32 frames) and keeps a running count, so you can grab a burst of traffic and review the most recent frames rather than watching them scroll past once.</p>
+            <p class="gi-sub">What the output means</p>
+            <dl class="gi-fields">
+              <div class="fld"><dt>stored</dt><dd>How many frames are currently held in the ring buffer (caps at 32, oldest dropped first).</dd></div>
+              <div class="fld"><dt>last_addr</dt><dd>The pipe address of the most recently stored packet.</dd></div>
+              <div class="fld"><dt>last</dt><dd>The payload of the most recently stored packet.</dd></div>
+            </dl>
+            <p class="gi-sub">Example telemetry</p>
+            <pre class="gi-ex"><code>{&quot;module&quot;:&quot;4.5&quot;,&quot;status&quot;:&quot;ok&quot;,&quot;data&quot;:{&quot;stored&quot;:32,&quot;last_addr&quot;:&quot;0xE7E7E7E7E7&quot;,&quot;last&quot;:&quot;DEADBEEF&quot;}}</code></pre>
+            <a class="gi-src" href="https://github.com/RRonium/cyberdeck-esp32s3/blob/main/firmware/04_2.4ghz_nrf24/4.5_packet_storage/packet_storage.ino" target="_blank" rel="noopener">
+              View this module&rsquo;s <code>.ino</code> source <span class="arrow">&rarr;</span>
+            </a>
+          </div>
+        </details>
+        <details class="guide-item">
+          <summary>
+            <span class="gi-id">4.6</span>
+            <span class="gi-name">Lab transmitter</span>
+            <span class="gi-caret" aria-hidden="true">+</span>
+          </summary>
+          <div class="gi-body">
+            <p class="gi-what">A low-power test transmitter that sends to <em>your own</em> nRF24 node so you can check a link and measure range. It reports whether each transmission was acknowledged. This is explicitly a self-test to a node you own — not for injecting into other devices.</p>
+            <p class="gi-sub">What the output means</p>
+            <dl class="gi-fields">
+              <div class="fld"><dt>ch</dt><dd>Channel used for the test transmission.</dd></div>
+              <div class="fld"><dt>addr</dt><dd>The destination pipe address of your own receiving node.</dd></div>
+              <div class="fld"><dt>sent</dt><dd>Count / marker that a test packet was transmitted.</dd></div>
+              <div class="fld"><dt>ack</dt><dd>Whether the receiving node acknowledged the packet (<code>ACK</code>) or not (<code>no ack</code>) — your pass/fail for the link.</dd></div>
+            </dl>
+            <p class="gi-sub">Example telemetry</p>
+            <pre class="gi-ex"><code>{&quot;module&quot;:&quot;4.6&quot;,&quot;status&quot;:&quot;ok&quot;,&quot;data&quot;:{&quot;ch&quot;:76,&quot;addr&quot;:&quot;0x1Node&quot;,&quot;sent&quot;:1,&quot;ack&quot;:true}}</code></pre>
+            <a class="gi-src" href="https://github.com/RRonium/cyberdeck-esp32s3/blob/main/firmware/04_2.4ghz_nrf24/4.6_lab_transmitter/lab_transmitter.ino" target="_blank" rel="noopener">
+              View this module&rsquo;s <code>.ino</code> source <span class="arrow">&rarr;</span>
+            </a>
+          </div>
+        </details>
+        </div>
+      </div>
+      <div class="guide-group c-nfc">
+        <div class="guide-group-head">
+          <span class="gg-num">05</span>
+          <h3>NFC · PN532</h3>
+        </div>
+
+        <div class="guide-list">
+          <p class="guide-note">The PN532 NFC subsystem (5.1&ndash;5.6: ISO&nbsp;14443A detection, tag reads, memory structure, NDEF read/write, dump storage and card emulation) is mapped out but <strong>not implemented yet</strong>. It&rsquo;s next on the roadmap &mdash; this guide will fill in once the firmware and dashboard land.</p>
+        </div>
+      </div>
+      <div class="guide-group c-ir">
+        <div class="guide-group-head">
+          <span class="gg-num">07</span>
+          <h3>Infrared · 38 kHz</h3>
+        </div>
+        <p class="gg-blurb">Learn, decode, analyse and replay infrared remote signals on GPIO4 (RX) / GPIO5 (TX). Verify the LED with a phone camera. (Flashed, hardware testing in progress.)</p>
+        <div class="guide-list">
+        <details class="guide-item">
+          <summary>
+            <span class="gi-id">7.1</span>
+            <span class="gi-name">38 kHz carrier modulation</span>
+            <span class="gi-caret" aria-hidden="true">+</span>
+          </summary>
+          <div class="gi-body">
+            <p class="gi-what">Drives a continuous 38 kHz, 50%-duty carrier on the IR LED (via the ESP32's LEDC hardware). 38 kHz is the frequency almost all consumer IR remotes use, so this is the baseline transmitter test. The light is invisible to your eye — point a phone camera at the LED and you'll see it glow.</p>
+            <p class="gi-sub">What the output means</p>
+            <dl class="gi-fields">
+              <div class="fld"><dt>freq_hz</dt><dd>The carrier frequency being generated, in Hz (38000).</dd></div>
+              <div class="fld"><dt>duty_pct</dt><dd>The duty cycle as a percentage (50) — how much of each cycle the LED is on.</dd></div>
+              <div class="fld"><dt>pin</dt><dd>The GPIO driving the IR LED (GPIO5).</dd></div>
+            </dl>
+            <p class="gi-sub">Example telemetry</p>
+            <pre class="gi-ex"><code>{&quot;module&quot;:&quot;7.1&quot;,&quot;status&quot;:&quot;ok&quot;,&quot;data&quot;:{&quot;freq_hz&quot;:38000,&quot;duty_pct&quot;:50,&quot;pin&quot;:5}}</code></pre>
+            <a class="gi-src" href="https://github.com/RRonium/cyberdeck-esp32s3/blob/main/firmware/07_infrared/7.1_38khz_modulation/38khz_modulation/38khz_modulation.ino" target="_blank" rel="noopener">
+              View this module&rsquo;s <code>.ino</code> source <span class="arrow">&rarr;</span>
+            </a>
+          </div>
+        </details>
+        <details class="guide-item">
+          <summary>
+            <span class="gi-id">7.2</span>
+            <span class="gi-name">IR pulse learning</span>
+            <span class="gi-caret" aria-hidden="true">+</span>
+          </summary>
+          <div class="gi-body">
+            <p class="gi-what">Captures the raw mark/space timing of every IR burst the receiver sees — i.e. the exact on/off durations that make up a remote's signal, with no attempt to interpret the protocol. This is the raw recording you can later replay with 7.3.</p>
+            <p class="gi-sub">What the output means</p>
+            <dl class="gi-fields">
+              <div class="fld"><dt>count</dt><dd>How many timing values were captured for the burst.</dd></div>
+              <div class="fld"><dt>overflow</dt><dd><code>YES</code> if the capture buffer filled before the signal finished (the recording is truncated), otherwise <code>no</code>.</dd></div>
+              <div class="fld"><dt>timings_us</dt><dd>The array of raw mark/space durations in microseconds — the alternating LED-on / LED-off lengths that encode the button press.</dd></div>
+            </dl>
+            <p class="gi-sub">Example telemetry</p>
+            <pre class="gi-ex"><code>{&quot;module&quot;:&quot;7.2&quot;,&quot;status&quot;:&quot;ok&quot;,&quot;data&quot;:{&quot;count&quot;:67,&quot;overflow&quot;:false,&quot;timings_us&quot;:[9000,4500,560,560,560,1690,560,...]}}</code></pre>
+            <a class="gi-src" href="https://github.com/RRonium/cyberdeck-esp32s3/blob/main/firmware/07_infrared/7.2_pulse_learning/pulse_learning/pulse_learning.ino" target="_blank" rel="noopener">
+              View this module&rsquo;s <code>.ino</code> source <span class="arrow">&rarr;</span>
+            </a>
+          </div>
+        </details>
+        <details class="guide-item">
+          <summary>
+            <span class="gi-id">7.3</span>
+            <span class="gi-name">IR signal replay</span>
+            <span class="gi-caret" aria-hidden="true">+</span>
+          </summary>
+          <div class="gi-body">
+            <p class="gi-what">Re-transmits the last signal captured by 7.2, 7.4 or 7.5 exactly once, then returns to idle. If the protocol was decoded it sends it properly; if the signal was only captured raw, it replays the raw timing at 38 kHz. This is how you prove a capture round-trips through the hardware.</p>
+            <p class="gi-sub">What the output means</p>
+            <dl class="gi-fields">
+              <div class="fld"><dt>protocol</dt><dd>The protocol being replayed, when the source capture was decoded (e.g. NEC).</dd></div>
+              <div class="fld"><dt>value</dt><dd>The code value being resent (hex), for a decoded signal.</dd></div>
+              <div class="fld"><dt>bits</dt><dd>Bit length of a decoded signal — or, for a raw replay, <code>count</code> pulses is reported instead.</dd></div>
+              <div class="fld"><dt>action</dt><dd>A marker that the one-shot resend fired before the module idles again.</dd></div>
+            </dl>
+            <p class="gi-sub">Example telemetry</p>
+            <pre class="gi-ex"><code>{&quot;module&quot;:&quot;7.3&quot;,&quot;status&quot;:&quot;ok&quot;,&quot;data&quot;:{&quot;protocol&quot;:&quot;NEC&quot;,&quot;value&quot;:&quot;0x20DF10EF&quot;,&quot;bits&quot;:32,&quot;action&quot;:&quot;replayed&quot;}}</code></pre>
+            <a class="gi-src" href="https://github.com/RRonium/cyberdeck-esp32s3/blob/main/firmware/07_infrared/7.3_signal_replay/signal_replay/signal_replay.ino" target="_blank" rel="noopener">
+              View this module&rsquo;s <code>.ino</code> source <span class="arrow">&rarr;</span>
+            </a>
+          </div>
+        </details>
+        <details class="guide-item">
+          <summary>
+            <span class="gi-id">7.4</span>
+            <span class="gi-name">IR protocol decode</span>
+            <span class="gi-caret" aria-hidden="true">+</span>
+          </summary>
+          <div class="gi-body">
+            <p class="gi-what">Listens on the IR receiver and decodes the signal into a named protocol and code value — NEC, Sony SIRC, RC5, RC6 and the other formats the IRremoteESP8266 library understands. This turns a button press into a clean, reusable code instead of raw timings.</p>
+            <p class="gi-sub">What the output means</p>
+            <dl class="gi-fields">
+              <div class="fld"><dt>protocol</dt><dd>The decoded protocol name (e.g. <code>NEC</code>, <code>SONY</code>, <code>RC5</code>). Unrecognised signals come back as <code>UNKNOWN</code>.</dd></div>
+              <div class="fld"><dt>value</dt><dd>The decoded command as a hex value — this is the unique code for the button that was pressed.</dd></div>
+              <div class="fld"><dt>bits</dt><dd>How many bits the decoded code is (e.g. NEC is 32 bits) — a sanity check that the decode is complete.</dd></div>
+            </dl>
+            <p class="gi-sub">Example telemetry</p>
+            <pre class="gi-ex"><code>{&quot;module&quot;:&quot;7.4&quot;,&quot;status&quot;:&quot;ok&quot;,&quot;data&quot;:{&quot;protocol&quot;:&quot;NEC&quot;,&quot;value&quot;:&quot;0x20DF10EF&quot;,&quot;bits&quot;:32}}</code></pre>
+            <a class="gi-src" href="https://github.com/RRonium/cyberdeck-esp32s3/blob/main/firmware/07_infrared/7.4_protocol_libraries/protocol_libraries/protocol_libraries.ino" target="_blank" rel="noopener">
+              View this module&rsquo;s <code>.ino</code> source <span class="arrow">&rarr;</span>
+            </a>
+          </div>
+        </details>
+        <details class="guide-item">
+          <summary>
+            <span class="gi-id">7.5</span>
+            <span class="gi-name">IR signal analysis</span>
+            <span class="gi-caret" aria-hidden="true">+</span>
+          </summary>
+          <div class="gi-body">
+            <p class="gi-what">Measures a captured burst: it sums all the mark (LED-on) time and all the space (LED-off) time and reports the totals plus the overall duty cycle. This characterises the shape of a signal — useful when a remote won't decode and you want to see what it's actually doing.</p>
+            <p class="gi-sub">What the output means</p>
+            <dl class="gi-fields">
+              <div class="fld"><dt>protocol</dt><dd>Decoded protocol name if the library recognised the burst, else UNKNOWN.</dd></div>
+              <div class="fld"><dt>mark_us</dt><dd>Total LED-on time across the burst, in microseconds.</dd></div>
+              <div class="fld"><dt>space_us</dt><dd>Total LED-off time across the burst, in microseconds.</dd></div>
+              <div class="fld"><dt>total_us</dt><dd>mark + space — the full length of the signal in microseconds.</dd></div>
+              <div class="fld"><dt>duty_pct</dt><dd>mark as a percentage of total — the duty cycle of the whole burst.</dd></div>
+            </dl>
+            <p class="gi-sub">Example telemetry</p>
+            <pre class="gi-ex"><code>{&quot;module&quot;:&quot;7.5&quot;,&quot;status&quot;:&quot;ok&quot;,&quot;data&quot;:{&quot;protocol&quot;:&quot;NEC&quot;,&quot;mark_us&quot;:22350,&quot;space_us&quot;:45150,&quot;total_us&quot;:67500,&quot;duty_pct&quot;:33.1}}</code></pre>
+            <a class="gi-src" href="https://github.com/RRonium/cyberdeck-esp32s3/blob/main/firmware/07_infrared/7.5_signal_analysis/signal_analysis/signal_analysis.ino" target="_blank" rel="noopener">
+              View this module&rsquo;s <code>.ino</code> source <span class="arrow">&rarr;</span>
+            </a>
+          </div>
+        </details>
+        <details class="guide-item">
+          <summary>
+            <span class="gi-id">7.6</span>
+            <span class="gi-name">LED circuit test</span>
+            <span class="gi-caret" aria-hidden="true">+</span>
+          </summary>
+          <div class="gi-body">
+            <p class="gi-what">Fires a short 26 µs pulse on the IR LED every 10 ms — a steady, easy-to-scope heartbeat for checking the transmit driver circuit is wired and working, independent of any real signal. Again, a phone camera will show the LED flickering.</p>
+            <p class="gi-sub">What the output means</p>
+            <dl class="gi-fields">
+              <div class="fld"><dt>pulses</dt><dd>A running count of pulses fired.</dd></div>
+              <div class="fld"><dt>pulse_us</dt><dd>The width of each pulse in microseconds (26).</dd></div>
+              <div class="fld"><dt>period_ms</dt><dd>How often a pulse fires, in milliseconds (10).</dd></div>
+              <div class="fld"><dt>pin</dt><dd>The GPIO driving the IR LED (GPIO5).</dd></div>
+            </dl>
+            <p class="gi-sub">Example telemetry</p>
+            <pre class="gi-ex"><code>{&quot;module&quot;:&quot;7.6&quot;,&quot;status&quot;:&quot;ok&quot;,&quot;data&quot;:{&quot;pulses&quot;:418,&quot;pulse_us&quot;:26,&quot;period_ms&quot;:10,&quot;pin&quot;:5}}</code></pre>
+            <a class="gi-src" href="https://github.com/RRonium/cyberdeck-esp32s3/blob/main/firmware/07_infrared/7.6_led_circuit_tests/led_circuit_tests/led_circuit_tests.ino" target="_blank" rel="noopener">
+              View this module&rsquo;s <code>.ino</code> source <span class="arrow">&rarr;</span>
+            </a>
+          </div>
+        </details>
+        </div>
+      </div>
+    </div>
+  </section>
+
   <footer><div class="wrap">
     <span>Cyberdeck ESP32-S3 · field security &amp; diagnostics · by Sannidhya Biswas &amp; Jyotiraditya Kansal</span>
     <a class="btn" href="app.html">Open the dashboard <span class="arrow">&rarr;</span></a>
