@@ -87,6 +87,18 @@
                 </div>
             </div>
 
+            <!-- Subsystem 07: Infrared -->
+            <div>
+                <button onclick="toggleDropdown('ir-section', 'ir-arrow')" class="w-full flex justify-between items-center text-xs text-cyber-yellow uppercase tracking-wider mb-2 px-2 py-1 font-bold hover:bg-cyber-border/20 rounded">
+                    <span>Subsystem 7 | Infrared</span>
+                    <span id="ir-arrow" class="transform transition-transform duration-200 -rotate-90">▼</span>
+                </button>
+                <div id="ir-section" class="space-y-1 pl-2 hidden">
+                    <button onclick="switchModule('7.4')" class="sidebar-btn w-full text-left px-3 py-2 rounded text-gray-400 hover:bg-cyber-border/30 hover:text-gray-200 text-xs transition">7.4 IR Capture &amp; Decode</button>
+                    <button onclick="switchModule('7.3')" class="sidebar-btn w-full text-left px-3 py-2 rounded text-gray-400 hover:bg-cyber-border/30 hover:text-gray-200 text-xs transition">7.3 Replay Last Code</button>
+                </div>
+            </div>
+
         </aside>
 
         <main class="flex-1 p-6 overflow-y-auto flex flex-col space-y-6">
@@ -258,11 +270,37 @@
             if (tbody.innerHTML.includes("Awaiting hardware telemetry")) {
                 tbody.innerHTML = "";
             }
+            // Firmware wraps readings as {module, status, data:{...}}
+            const msg = data.data || data;
+            const mod = data.module || currentModule;
+
+            // Ignore late frames from a module we've already switched away from
+            if (mod !== currentModule && mod !== "SYS") return;
+
             const tr = document.createElement('tr');
             tr.className = "hover:bg-cyber-border/20 border-b border-cyber-border/30";
 
-            // Format table dynamically based on active module category
-            if (currentModule.startsWith("1.")) {
+            // Status-only frames (module_active, module_halted, errors) carry just a msg
+            const isStatusOnly = msg.msg !== undefined && Object.keys(msg).length === 1;
+            if (isStatusOnly) {
+                if (msg.msg === "module_active" || msg.msg === "module_halted") return;  // already in the serial console
+                const isError = data.status === "error";
+                const label = msg.msg === "no_code_captured"
+                    ? "No IR code captured yet: run 7.4 and point a remote at the receiver first."
+                    : msg.msg;
+                tr.innerHTML = `
+                    <td colspan="4" class="p-3 ${isError ? 'text-red-400' : 'text-gray-400'}">[${mod}] ${isError ? 'ERROR' : 'STATUS'}: ${label}</td>
+                `;
+            } else if (currentModule.startsWith("7.")) {
+                // Infrared: 7.4 streams decoded captures, 7.3 reports a one-shot replay
+                tr.innerHTML = `
+                    <td class="p-3 font-bold text-cyber-yellow">${msg.protocol || 'UNKNOWN'}</td>
+                    <td class="p-3 text-gray-300">0x${(msg.value || '0').toUpperCase()}</td>
+                    <td class="p-3 text-gray-300">${msg.bits !== undefined ? msg.bits : '-'}</td>
+                    <td class="p-3 text-cyber-cyan text-xs">${msg.action || (mod === '7.4' ? 'captured' : 'ok')}</td>
+                `;
+            } else if (currentModule.startsWith("1.")) {
+                data = msg;
                 tr.innerHTML = `
                     <td class="p-3 font-bold text-cyber-cyan">${data.ssid || 'Hidden'}</td>
                     <td class="p-3 text-gray-400">${data.bssid || 'N/A'}</td>
@@ -271,6 +309,7 @@
                 `;
             } else {
                 // BLE modules telemetry rendering
+                data = msg;
                 tr.innerHTML = `
                     <td class="p-3 font-bold text-cyber-magenta">${data.name || data.addr || 'BLE Device'}</td>
                     <td class="p-3 text-gray-400 text-xs">${data.uuid || data.service || 'N/A'}</td>
@@ -300,7 +339,9 @@
                 '2.3': 'MODULE 2.3: ADVERTISEMENT SNIFFER',
                 '2.4': 'MODULE 2.4: CUSTOM BEACON SPAMMER',
                 '2.5': 'MODULE 2.5: GATT EXPLORATION & VALUE READER',
-                '2.6': 'MODULE 2.6: BLE DEVICE STRESS TESTING'
+                '2.6': 'MODULE 2.6: BLE DEVICE STRESS TESTING',
+                '7.4': 'MODULE 7.4: IR CAPTURE & PROTOCOL DECODE',
+                '7.3': 'MODULE 7.3: IR SIGNAL REPLAY'
             };
             const descs = {
                 '1.1': 'Scans local airspace for active BSSIDs, SSIDs, channels, and RSSI metrics.',
@@ -314,7 +355,9 @@
                 '2.3': 'Intercepts raw low-level advertisement payloads and hex packets.',
                 '2.4': 'Broadcasts custom beacon frames for range and scanner verification.',
                 '2.5': 'Connects to devices, inspects characteristics, and dumps live hex values.',
-                '2.6': 'Measures connection handshake latencies and stress-tests targets.'
+                '2.6': 'Measures connection handshake latencies and stress-tests targets.',
+                '7.4': 'Listens on the IR receiver and decodes NEC, Sony, RC5, RC6 and other remote protocols.',
+                '7.3': 'Re-transmits the last code captured by 7.4 once through the IR LED, then returns to idle.'
             };
 
             // Update dynamic table column headers based on module group
@@ -325,6 +368,13 @@
                     <th class="p-3">MAC / BSSID</th>
                     <th class="p-3">CH</th>
                     <th class="p-3">RSSI</th>
+                `;
+            } else if (modId.startsWith("7.")) {
+                headerRow.innerHTML = `
+                    <th class="p-3">Protocol</th>
+                    <th class="p-3">Value</th>
+                    <th class="p-3">Bits</th>
+                    <th class="p-3">Status</th>
                 `;
             } else {
                 headerRow.innerHTML = `
