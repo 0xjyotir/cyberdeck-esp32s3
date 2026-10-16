@@ -1,15 +1,23 @@
 /*
  * Cyberdeck ESP32-S3 — Unified Firmware
  * ----------------------------------------------------------------
- * Merges: 01_wifi (1.1-1.6), 02_ble (2.1-2.6), 07_infrared (7.3, 7.4)
+ * Merges: 01_wifi (1.1-1.6), 02_ble (2.1-2.6), 07_infrared (7.1-7.6)
  *
- * IR module IDs follow the repo's real firmware/07_infrared/7.1-7.6
- * sub-module layout (7.1 38khz_modulation, 7.2 pulse_learning,
- * 7.3 signal_replay, 7.4 protocol_libraries, 7.5 signal_analysis,
- * 7.6 led_circuit_tests — see firmware/07_infrared/). Only 7.3
- * (replay) and 7.4 (protocol decode: NEC/Sony/RC5/RC6 via
- * IRremoteESP8266) are implemented so far; 7.1/7.2/7.5/7.6 are not
- * yet written.
+ * IR module IDs follow firmware/07_infrared/7.1-7.6:
+ *   7.1 38khz_modulation   — continuous 38kHz carrier on TX (LEDC)
+ *   7.2 pulse_learning     — raw mark/space timings from RX
+ *   7.3 signal_replay      — one-shot replay of the last capture
+ *                            (decoded protocol if known, raw otherwise)
+ *   7.4 protocol_libraries — protocol decode (NEC/Sony/RC5/RC6/...)
+ *   7.5 signal_analysis    — mark/space totals + duty per capture
+ *   7.6 led_circuit_tests  — 26us test pulse on TX every 10ms
+ *
+ * IR pin sharing: 7.1, 7.3 and 7.6 all drive IR_TX_PIN (7.1 through
+ * LEDC, 7.3 through IRsend, 7.6 through digitalWrite); 7.2, 7.4 and
+ * 7.5 share the one IRrecv on IR_RX_PIN. Only one module is ever
+ * active, and startModule() now stops the previous module first, so
+ * the LEDC channel is always detached before IRsend / digitalWrite
+ * take the pin back.
  *
  * PROTOCOL (locked — see PROTOCOL.md for the full spec):
  *   Command  (host -> S3):  {"module":"1.1","action":"START"}
@@ -64,14 +72,24 @@
 // IR
 static const uint16_t IR_RX_PIN = 4;   // IR receiver diode (OUT -> GPIO4)
 static const uint16_t IR_TX_PIN = 5;   // IR transmitter LED (via NPN/driver -> GPIO5)
+// GPIO4 / GPIO5 are plain GPIOs on the S3: not strapping pins
+// (0/3/45/46), not USB (19/20), not flash/PSRAM (26-37).
+//
 // Reserved for future modules (not used yet — documented here so
 // 04_2.4ghz_nrf24 / 05_nfc_pn532 don't collide with IR or each other
 // when they're merged in next):
-//   nRF24L01  (SPI)  CE=GPIO6  CSN=GPIO7  SCK/MISO/MOSI = default VSPI (36/37/35)
+//   nRF24L01  (SPI)  CE=GPIO6  CSN=GPIO7  SCK=GPIO12 MISO=GPIO13 MOSI=GPIO11
+//                    (S3 default FSPI pins. Do NOT use 35/36/37: on
+//                    octal-PSRAM boards like N8R8/N16R8 those are wired
+//                    to the PSRAM and are unusable.)
 //   PN532     (I2C)  SDA=GPIO8 SCL=GPIO9  (keep off the nRF24 SPI bus)
 
 static const uint16_t IR_CAPTURE_BUFFER_SIZE = 1024;
 static const uint8_t  IR_TIMEOUT = 15;  // ms of silence that ends a capture
+static const uint32_t IR_CARRIER_HZ = 38000;   // 7.1 carrier frequency
+static const uint8_t  IR_CARRIER_RES_BITS = 8; // 7.1 LEDC resolution (duty 0-255)
+static const uint32_t IR_TEST_PULSE_US = 26;   // 7.6 pulse width (~one 38kHz period)
+static const uint32_t IR_TEST_PERIOD_MS = 10;  // 7.6 pulse interval
 
 // ===================================================================
 // GLOBAL STATE
@@ -103,6 +121,11 @@ decode_type_t lastIrProtocol = decode_type_t::UNKNOWN;
 uint64_t lastIrValue = 0;
 uint16_t lastIrBits = 0;
 bool lastIrCaptured = false;
+// Raw timings (us, mark/space alternating) of the last capture from
+// 7.2 / 7.4 / 7.5, so 7.3 can replay codes no decoder recognised.
+uint16_t lastIrRaw[IR_CAPTURE_BUFFER_SIZE];
+uint16_t lastIrRawLen = 0;
+unsigned long irTestPulseCount = 0;   // 7.6 pulses fired since START
 
 JsonDocument telemetryDoc;
 
@@ -121,6 +144,22 @@ void emitTelemetry(const char* module, const char* status) {
 void emitError(const char* module, const char* msg) {
   telemetryDoc["data"]["msg"] = msg;
   emitTelemetry(module, "error");
+}
+
+// ===================================================================
+// IR CAPTURE HELPER — remember the last capture (decoded + raw) for 7.3
+// ===================================================================
+void rememberIrCapture(const decode_results& r) {
+  lastIrProtocol = r.decode_type;
+  lastIrValue = r.value;
+  lastIrBits = r.bits;
+  lastIrRawLen = 0;
+  // rawbuf[0] is the gap before the frame; real timings start at 1.
+  for (uint16_t i = 1; i < r.rawlen && lastIrRawLen < IR_CAPTURE_BUFFER_SIZE; i++) {
+    uint32_t us = (uint32_t)r.rawbuf[i] * kRawTick;
+    lastIrRaw[lastIrRawLen++] = us > UINT16_MAX ? UINT16_MAX : (uint16_t)us;
+  }
+  lastIrCaptured = true;
 }
 
 // ===================================================================
@@ -160,7 +199,13 @@ class UnifiedBLECallbacks : public BLEAdvertisedDeviceCallbacks {
 // MODULE START / STOP — one-time side effects live here, not in the
 // polling loop, so entering a module never repeats init work.
 // ===================================================================
+void stopModule();
+
 void startModule(const String& module) {
+  // Tear down whatever was running so its hardware (WiFi mode, BLE
+  // scan, LEDC on the IR TX pin, IRrecv interrupt) is released first.
+  if (activeModule != "NONE") stopModule();
+
   activeModule = module;
   moduleActionMillis = 0;   // 0 forces the first poll to fire immediately
   moduleStateMillis = 0;
@@ -185,12 +230,23 @@ void startModule(const String& module) {
     pBLEScan->start(0, nullptr, false);  // continuous async scan for target discovery
   } else if (module == "2.4") {
     if (pAdvertising) pAdvertising->start();
-  } else if (module == "7.4") {
+  } else if (module == "7.1") {
+    if (!ledcAttach(IR_TX_PIN, IR_CARRIER_HZ, IR_CARRIER_RES_BITS)) {
+      emitError("7.1", "ledc_attach_failed");
+      activeModule = "NONE";
+      return;
+    }
+    ledcWrite(IR_TX_PIN, 1 << (IR_CARRIER_RES_BITS - 1));  // 50% duty
+  } else if (module == "7.2" || module == "7.4" || module == "7.5") {
     irrecv.enableIRIn();
   } else if (module == "7.3") {
     irsend.begin();
     // one-shot replay happens in the execution section below, then
     // the module auto-returns to NONE.
+  } else if (module == "7.6") {
+    pinMode(IR_TX_PIN, OUTPUT);
+    digitalWrite(IR_TX_PIN, LOW);
+    irTestPulseCount = 0;
   }
 
   telemetryDoc["data"]["msg"] = "module_active";
@@ -208,8 +264,15 @@ void stopModule() {
     if (pBLEScan) pBLEScan->stop();
   } else if (activeModule == "2.4" && pAdvertising) {
     pAdvertising->stop();
-  } else if (activeModule == "7.4") {
+  } else if (activeModule == "7.1") {
+    ledcWrite(IR_TX_PIN, 0);
+    ledcDetach(IR_TX_PIN);
+    pinMode(IR_TX_PIN, OUTPUT);
+    digitalWrite(IR_TX_PIN, LOW);   // leave the IR LED off
+  } else if (activeModule == "7.2" || activeModule == "7.4" || activeModule == "7.5") {
     irrecv.disableIRIn();
+  } else if (activeModule == "7.6") {
+    digitalWrite(IR_TX_PIN, LOW);
   } else if (activeModule == "1.1" && wifiScanState == WSCAN_RUNNING) {
     WiFi.scanDelete();
     wifiScanState = WSCAN_IDLE;
@@ -478,10 +541,7 @@ void loop() {
     // irrecv.decode() is non-blocking: it just checks whether the
     // interrupt-driven capture buffer has a finished result.
     if (irrecv.decode(&irResults)) {
-      lastIrProtocol = irResults.decode_type;
-      lastIrValue = irResults.value;
-      lastIrBits = irResults.bits;
-      lastIrCaptured = true;
+      rememberIrCapture(irResults);
 
       telemetryDoc["data"]["protocol"] = typeToString(irResults.decode_type);
       telemetryDoc["data"]["value"] = uint64ToString(irResults.value, 16);
@@ -491,19 +551,93 @@ void loop() {
       irrecv.resume();
     }
   }
-  // 7.3 = signal_replay (one-shot replay of the last 7.4 capture)
+  // 7.2 = pulse_learning (raw mark/space timings of each capture)
+  else if (activeModule == "7.2") {
+    if (irrecv.decode(&irResults)) {
+      rememberIrCapture(irResults);
+
+      telemetryDoc["data"]["count"] = lastIrRawLen;
+      telemetryDoc["data"]["overflow"] = irResults.overflow;
+      JsonArray timings = telemetryDoc["data"]["timings_us"].to<JsonArray>();
+      for (uint16_t i = 0; i < lastIrRawLen; i++) timings.add(lastIrRaw[i]);
+      emitTelemetry("7.2", "ok");
+
+      irrecv.resume();
+    }
+  }
+  // 7.5 = signal_analysis (mark/space totals per capture)
+  else if (activeModule == "7.5") {
+    if (irrecv.decode(&irResults)) {
+      rememberIrCapture(irResults);
+
+      uint32_t markTime = 0;
+      uint32_t spaceTime = 0;
+      for (uint16_t i = 0; i < lastIrRawLen; i++) {
+        // even index = mark (LED on), odd index = space (LED off)
+        if (i % 2 == 0) markTime += lastIrRaw[i];
+        else            spaceTime += lastIrRaw[i];
+      }
+      uint32_t total = markTime + spaceTime;
+
+      telemetryDoc["data"]["pulses"] = lastIrRawLen;
+      telemetryDoc["data"]["mark_us"] = markTime;
+      telemetryDoc["data"]["space_us"] = spaceTime;
+      telemetryDoc["data"]["total_us"] = total;
+      telemetryDoc["data"]["duty_pct"] = total ? (100.0f * markTime / total) : 0.0f;
+      telemetryDoc["data"]["protocol"] = typeToString(irResults.decode_type);
+      emitTelemetry("7.5", "ok");
+
+      irrecv.resume();
+    }
+  }
+  // 7.3 = signal_replay (one-shot replay of the last 7.2/7.4/7.5 capture)
   else if (activeModule == "7.3") {
-    if (!lastIrCaptured || lastIrProtocol == decode_type_t::UNKNOWN) {
+    if (!lastIrCaptured) {
       emitError("7.3", "no_code_captured");
-    } else {
+    } else if (lastIrProtocol != decode_type_t::UNKNOWN) {
       irsend.send(lastIrProtocol, lastIrValue, lastIrBits);
       telemetryDoc["data"]["protocol"] = typeToString(lastIrProtocol);
       telemetryDoc["data"]["value"] = uint64ToString(lastIrValue, 16);
       telemetryDoc["data"]["bits"] = lastIrBits;
       telemetryDoc["data"]["action"] = "replayed";
       emitTelemetry("7.3", "ok");
+    } else {
+      // No decoder matched: resend the raw timings on a 38kHz carrier.
+      irsend.sendRaw(lastIrRaw, lastIrRawLen, IR_CARRIER_HZ / 1000);
+      telemetryDoc["data"]["protocol"] = "RAW";
+      telemetryDoc["data"]["count"] = lastIrRawLen;
+      telemetryDoc["data"]["action"] = "replayed";
+      emitTelemetry("7.3", "ok");
     }
     activeModule = "NONE";
+  }
+  // 7.1 = 38khz_modulation (carrier runs in hardware; just report)
+  else if (activeModule == "7.1") {
+    if (now - moduleActionMillis >= 1000) {
+      moduleActionMillis = now;
+      telemetryDoc["data"]["freq_hz"] = ledcReadFreq(IR_TX_PIN);
+      telemetryDoc["data"]["duty_pct"] = 50;
+      telemetryDoc["data"]["pin"] = IR_TX_PIN;
+      emitTelemetry("7.1", "ok");
+    }
+  }
+  // 7.6 = led_circuit_tests (26us pulse every 10ms, count reported 1/s)
+  else if (activeModule == "7.6") {
+    if (now - moduleStateMillis >= IR_TEST_PERIOD_MS) {
+      moduleStateMillis = now;
+      digitalWrite(IR_TX_PIN, HIGH);
+      delayMicroseconds(IR_TEST_PULSE_US);  // bounded 26us busy-wait
+      digitalWrite(IR_TX_PIN, LOW);
+      irTestPulseCount++;
+    }
+    if (now - moduleActionMillis >= 1000) {
+      moduleActionMillis = now;
+      telemetryDoc["data"]["pulses"] = irTestPulseCount;
+      telemetryDoc["data"]["pulse_us"] = IR_TEST_PULSE_US;
+      telemetryDoc["data"]["period_ms"] = IR_TEST_PERIOD_MS;
+      telemetryDoc["data"]["pin"] = IR_TX_PIN;
+      emitTelemetry("7.6", "ok");
+    }
   }
 
   // No trailing delay(): loop() is now gated entirely by the
