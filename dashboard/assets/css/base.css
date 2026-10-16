@@ -1,28 +1,31 @@
 /* Cyberdeck design tokens + shared pieces (welcome page and dashboard).
-   Layout concept: a dark bench at night, lit only by the signals the deck
-   is listening to. Each subsystem owns one hue and keeps it everywhere. */
+   Blueprint direction: navy engineering grid paper, cyan linework, the board
+   drawn as a dashed schematic. Each subsystem owns one hue everywhere. */
 :root {
-  --bg: #0b0c10;
-  --bg2: #101219;
-  --panel: #13161e;
-  --panel2: #191d27;
-  --line: #232835;
-  --line2: #313849;
-  --text: #ece9e2;
-  --mute: #959baa;
-  --faint: #5f6677;
+  --bg: #060b16;
+  --bg2: #0a1120;
+  --panel: #0c1628;
+  --panel2: #0f1d35;
+  --line: #1b2d4d;
+  --line2: #2c4677;
+  --text: #dce8ff;
+  --mute: #8aa0c8;
+  --faint: #51658c;
 
-  --wifi: #3ddbd9;
-  --ble: #ff7eb6;
-  --ir: #ffb454;
-  --nrf: #8fa8ff;
-  --nfc: #b7e36b;
+  --wifi: #58c6ff;
+  --ble: #a9b8ff;
+  --ir: #ffd27a;
+  --nrf: #7aa0ff;
+  --nfc: #8ef0d0;
   --ok: #57e389;
   --err: #ff6b6b;
 
-  --display: "Bricolage Grotesque", "Avenir Next", "Segoe UI", system-ui, sans-serif;
-  --body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
-  --mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  /* Syne is kept for the hero headline only; everything else is Anthropic Sans
+     (Claude's UI face), falling back to Hanken Grotesk where it isn't installed. */
+  --display: "Syne", "Avenir Next", system-ui, sans-serif;
+  --body: "Anthropic Sans", "Hanken Grotesk", "Segoe UI", system-ui, sans-serif;
+  --mono: var(--body);
+  --code: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
 
   --radius: 10px;
   --gutter: max(16px, 4vw);
@@ -39,9 +42,9 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 a { color: inherit; }
-h1, h2, h3 { font-family: var(--display); font-weight: 700; line-height: 1.05; margin: 0; text-wrap: balance; }
+h1, h2, h3 { font-family: var(--body); font-weight: 700; line-height: 1.05; margin: 0; text-wrap: balance; }
 p { margin: 0; }
-code, .mono { font-family: var(--mono); }
+code, .mono { font-family: var(--code); }
 :focus-visible { outline: 2px solid var(--wifi); outline-offset: 3px; border-radius: 4px; }
 
 .eyebrow {
@@ -67,8 +70,8 @@ code, .mono { font-family: var(--mono); }
 }
 .btn:hover { border-color: var(--text); }
 .btn:active { transform: translateY(1px); }
-.btn-primary { background: var(--text); color: var(--bg); border-color: var(--text); }
-.btn-primary:hover { background: #fff; }
+.btn-primary { background: var(--wifi); color: #041325; border-color: var(--wifi); }
+.btn-primary:hover { background: #8ad8ff; border-color: #8ad8ff; }
 .btn .arrow { transition: transform .25s; }
 .btn:hover .arrow { transform: translateX(3px); }
 
@@ -79,12 +82,8 @@ code, .mono { font-family: var(--mono); }
 .brand-mark i:nth-child(1) { background: var(--wifi); }
 .brand-mark i:nth-child(5) { background: var(--ble); }
 .brand-mark i:nth-child(9) { background: var(--ir); }
-.brand-name { font: 700 17px/1 var(--display); letter-spacing: -0.01em; }
+.brand-name { font: 700 17px/1 var(--body); letter-spacing: -0.01em; }
 .brand-name span { color: var(--mute); font-weight: 500; }
-
-/* Animated dot field (see assets/js/dotgrid.js) */
-.dotgrid { position: absolute; inset: 0; display: grid; justify-content: center; align-content: center; overflow: hidden; pointer-events: none; }
-.dotgrid .dot { width: 4px; height: 4px; margin: auto; border-radius: 50%; background: var(--line2); will-change: transform; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }

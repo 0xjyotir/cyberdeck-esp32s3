@@ -6,7 +6,7 @@
   <title>Cyberdeck ESP32-S3</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=Hanken+Grotesk:wght@400;500;600;700&display=swap">
   <link rel="stylesheet" href="assets/css/base.css">
   <link rel="stylesheet" href="assets/css/welcome.css">
 </head>
@@ -25,21 +25,16 @@
       <svg id="deck-board" viewBox="0 0 1200 760" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg">
         <defs>
           <filter id="glow" x="-40%" y="-40%" width="180%" height="180%">
-            <feGaussianBlur stdDeviation="3.2" result="b"/>
+            <feGaussianBlur stdDeviation="2.2" result="b"/>
             <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
           </filter>
-          <pattern id="silk" width="34" height="34" patternUnits="userSpaceOnUse">
-            <circle cx="2" cy="2" r="1" fill="var(--line2)" opacity="0.5"/>
-          </pattern>
         </defs>
 
         <!-- board substrate -->
-        <rect x="70" y="90" width="1060" height="580" rx="22" fill="var(--panel)" stroke="var(--line)" stroke-width="2"/>
-        <rect x="70" y="90" width="1060" height="580" rx="22" fill="url(#silk)"/>
+        <rect class="substrate" x="70" y="90" width="1060" height="580" rx="22" stroke-width="2"/>
 
         <!-- dim base traces -->
         <g fill="none" stroke="var(--line2)" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round">
-          <path class="trace-base" d="M600 350 L600 200 L760 200 L760 120 L950 120"/>
           <path class="trace-base" d="M650 380 L860 380 L930 360 L1080 360"/>
           <path class="trace-base" d="M650 410 L650 560 L820 560 L900 650"/>
           <path class="trace-base" d="M550 410 L550 520 L380 520 L300 650"/>
@@ -48,7 +43,6 @@
 
         <!-- bright signal pulses -->
         <g fill="none" stroke-width="3.4" stroke-linejoin="round" stroke-linecap="round" filter="url(#glow)">
-          <path id="pulse-wifi" d="M600 350 L600 200 L760 200 L760 120 L950 120" stroke-dasharray="26 2600" stroke-dashoffset="2400"/>
           <path id="pulse-ble"  d="M650 380 L860 380 L930 360 L1080 360" stroke-dasharray="26 2600" stroke-dashoffset="2400"/>
           <path id="pulse-ir"   d="M650 410 L650 560 L820 560 L900 650" stroke-dasharray="26 2600" stroke-dashoffset="2400"/>
           <path id="pulse-nrf"  d="M550 410 L550 520 L380 520 L300 650" stroke-dasharray="26 2600" stroke-dashoffset="2400"/>
@@ -56,19 +50,13 @@
         </g>
 
         <!-- edge pads + labels -->
-        <g class="pad" font-family="var(--mono)" font-size="13" letter-spacing="1.5">
-          <circle cx="950" cy="120" r="6" fill="var(--wifi)"/><text x="950" y="102" fill="var(--wifi)" text-anchor="middle">WIFI</text>
+        <g class="pad" font-family="var(--body)" font-size="13" letter-spacing="1.5">
           <circle cx="1080" cy="360" r="6" fill="var(--ble)"/><text x="1080" y="342" fill="var(--ble)" text-anchor="middle">BLE</text>
           <circle cx="900" cy="650" r="6" fill="var(--ir)"/><text x="900" y="676" fill="var(--ir)" text-anchor="middle">IR</text>
           <circle cx="300" cy="650" r="6" fill="var(--nrf)"/><text x="300" y="676" fill="var(--nrf)" text-anchor="middle">NRF24</text>
           <circle cx="130" cy="340" r="6" fill="var(--nfc)"/><text x="130" y="322" fill="var(--nfc)" text-anchor="middle">NFC</text>
         </g>
 
-        <!-- antenna meander + radio rings -->
-        <path class="pad" d="M950 120 L950 95 L930 95 L930 75 L950 75 L950 55 L930 55" fill="none" stroke="var(--wifi)" stroke-width="2.5"/>
-        <g id="antenna-rings" fill="none" stroke="var(--wifi)" stroke-width="2">
-          <circle cx="940" cy="65" r="4" opacity="0"/><circle cx="940" cy="65" r="4" opacity="0"/><circle cx="940" cy="65" r="4" opacity="0"/>
-        </g>
 
         <!-- USB-C on the left edge -->
         <rect class="usb" x="40" y="352" width="44" height="56" rx="10" fill="var(--panel2)" stroke="var(--line2)" stroke-width="2"/>
@@ -83,7 +71,7 @@
             <line x1="528" y1="402" x2="672" y2="402"/><line x1="528" y1="420" x2="672" y2="420"/>
           </g>
           <rect x="556" y="356" width="88" height="38" rx="4" fill="var(--bg)" stroke="var(--line2)"/>
-          <text x="600" y="380" fill="var(--mute)" font-family="var(--mono)" font-size="14" text-anchor="middle" letter-spacing="1">ESP32-S3</text>
+          <text x="600" y="380" fill="var(--mute)" font-family="var(--body)" font-size="14" text-anchor="middle" letter-spacing="1">ESP32-S3</text>
           <circle id="power-led" cx="672" cy="330" r="5" fill="var(--ok)"/>
         </g>
 

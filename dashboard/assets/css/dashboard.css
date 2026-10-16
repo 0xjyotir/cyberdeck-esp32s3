@@ -1,6 +1,6 @@
 /* Dashboard view — same layout and format as the original (header, collapsible
    subsystem sidebar, module panel, telemetry table + serial console), restyled
-   onto the shared Signal Bench tokens. Structure and behaviour are unchanged. */
+   onto the shared Blueprint tokens. Structure and behaviour are unchanged. */
 html, body { height: 100%; }
 body.app { display: flex; flex-direction: column; overflow: hidden; }
 
@@ -15,7 +15,7 @@ body.app { display: flex; flex-direction: column; overflow: hidden; }
 .live-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--faint); box-shadow: 0 0 0 0 transparent; }
 .live-dot.on { background: var(--ok); animation: pulse 2s infinite; }
 @keyframes pulse { 0%{box-shadow:0 0 0 0 rgba(87,227,137,.5)} 70%{box-shadow:0 0 0 7px rgba(87,227,137,0)} 100%{box-shadow:0 0 0 0 transparent} }
-.app-header h1 { font: 800 17px/1 var(--display); letter-spacing: -.01em; }
+.app-header h1 { font: 700 17px/1 var(--body); letter-spacing: -.01em; }
 .app-header h1 span { color: var(--mute); font-weight: 500; }
 .app-header .right { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; justify-content: flex-end; }
 .conn-pill { font: 500 11px/1 var(--mono); letter-spacing: .08em; padding: 7px 11px; border-radius: 999px; border: 1px solid var(--err); color: var(--err); background: color-mix(in srgb, var(--err) 12%, transparent); }
@@ -40,9 +40,10 @@ body.app { display: flex; flex-direction: column; overflow: hidden; }
 .s-nrf { --chip: var(--nrf); } .s-nfc { --chip: var(--nfc); }
 
 /* main */
-.main { flex: 1; min-width: 0; overflow-y: auto; padding: 22px max(18px, env(safe-area-inset-right,0px)) 22px 22px; display: flex; flex-direction: column; gap: 18px; }
-.module-bar { display: flex; align-items: center; justify-content: space-between; gap: 18px; flex-wrap: wrap; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 20px 22px; }
-.module-bar h2 { font: 700 18px/1.1 var(--display); color: var(--accent, var(--ir)); }
+.main { background-image: linear-gradient(var(--bg2) 1px, transparent 1px), linear-gradient(90deg, var(--bg2) 1px, transparent 1px); background-size: 44px 44px;
+  flex: 1; min-width: 0; overflow-y: auto; padding: 22px max(18px, env(safe-area-inset-right,0px)) 22px 22px; display: flex; flex-direction: column; gap: 18px; }
+.module-bar { display: flex; align-items: center; justify-content: space-between; gap: 18px; flex-wrap: wrap; background: var(--panel); border: 1px dashed var(--line2); border-radius: var(--radius); padding: 20px 22px; }
+.module-bar h2 { font: 700 18px/1.15 var(--body); color: var(--accent, var(--wifi)); }
 .module-bar p { margin-top: 7px; color: var(--mute); font-size: 14px; max-width: 70ch; }
 .module-actions { display: flex; gap: 10px; }
 .act { padding: 11px 18px; border-radius: 8px; border: 1px solid var(--line2); background: transparent; color: var(--text); font: 600 13px/1 var(--body); cursor: pointer; transition: .18s; }
@@ -60,7 +61,7 @@ thead th { position: sticky; top: 0; background: var(--panel2); color: var(--wif
 tbody td { padding: 11px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
 tbody tr:hover { background: var(--bg2); }
 .empty { text-align: center; color: var(--faint); padding: 26px; }
-.console { flex: 1; min-height: 160px; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 13px; font: 400 12.5px/1.6 var(--mono); color: var(--ok); overflow-y: auto; }
+.console { flex: 1; min-height: 160px; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 13px; font: 400 12.5px/1.6 var(--code); color: var(--ok); overflow-y: auto; }
 .console div { word-break: break-all; }
 .console .sys { color: var(--mute); } .console .sent { color: var(--wifi); } .console .err { color: var(--err); }
 

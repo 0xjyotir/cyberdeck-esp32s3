@@ -1,7 +1,7 @@
 /* Animated ESP32-S3 board for the welcome hero. The board itself is static SVG
-   (#deck-board); this script lights it up: a bright dot runs outward along each
-   subsystem trace in that subsystem's hue, the antenna emits radio rings, and
-   the power LED breathes. Pointer movement spawns an extra pulse so the board
+   (#deck-board), drawn as a dashed schematic; this script lights it up: a bright
+   dot runs outward along each subsystem trace in that subsystem's hue, and the
+   power LED breathes. Pointer movement spawns an extra pulse so the board
    feels alive under the cursor. Honours prefers-reduced-motion. */
 (function () {
   const rm = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -12,7 +12,6 @@
 
   // Each trace has a dim base path (already in the SVG) and a bright pulse path.
   const TRACES = [
-    { id: "wifi", color: "--wifi", dur: 1700 },
     { id: "ble",  color: "--ble",  dur: 1500 },
     { id: "ir",   color: "--ir",   dur: 1900 },
     { id: "nrf",  color: "--nrf",  dur: 1600 },
@@ -33,21 +32,6 @@
     });
   }
 
-  function rings() {
-    const g = document.getElementById("antenna-rings");
-    if (!g) return;
-    const ring = g.querySelectorAll("circle");
-    anime({
-      targets: ring,
-      r: [4, 46],
-      opacity: [{ value: 0.55, duration: 0 }, { value: 0, duration: 1800 }],
-      easing: "easeOutSine",
-      duration: 1800,
-      delay: anime.stagger(600),
-      loop: true
-    });
-  }
-
   function led() {
     anime({
       targets: "#power-led",
@@ -59,26 +43,12 @@
     });
   }
 
-  // intro: draw the whole trace network in, then start the loops
+  // intro: fade the schematic in piece by piece, then start the loops
   function start() {
-    const bases = svg.querySelectorAll(".trace-base");
-    bases.forEach((p) => {
-      const len = p.getTotalLength();
-      p.style.strokeDasharray = len;
-      p.style.strokeDashoffset = len;
-    });
-    anime({
-      targets: ".trace-base",
-      strokeDashoffset: [anime.setDashoffset, 0],
-      easing: "easeInOutSine",
-      duration: 1400,
-      delay: anime.stagger(120)
-    });
-    anime({ targets: "#deck-board .chip, #deck-board .pin, #deck-board .pad, #deck-board .usb",
+    anime({ targets: "#deck-board .trace-base, #deck-board .chip, #deck-board .pin, #deck-board .pad, #deck-board .usb",
       opacity: [0, 1], easing: "easeOutQuad", duration: 900, delay: anime.stagger(20, { start: 200 }) });
 
     TRACES.forEach((t, i) => pulse(t, 1400 + i * 260));
-    rings();
     led();
   }
 
