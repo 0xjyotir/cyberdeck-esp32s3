@@ -85,6 +85,9 @@
 
     </aside>
 
+    <!-- drag to resize the sidebar (max 75% of the width) -->
+    <div class="resizer resizer-col" role="separator" aria-orientation="vertical" aria-label="Resize sidebar" tabindex="0" title="Drag to resize · double-click to reset"></div>
+
     <!-- working column -->
     <main class="main">
       <section class="module-bar" id="module-bar">
@@ -109,6 +112,9 @@
             </table>
           </div>
         </section>
+
+        <!-- drag to resize telemetry vs. serial console (each max 75% of the height) -->
+        <div class="resizer resizer-row" role="separator" aria-orientation="horizontal" aria-label="Resize serial console" tabindex="0" title="Drag to resize · double-click to reset"></div>
 
         <section class="panel panel-serial">
           <div class="serial-hd">
@@ -135,6 +141,7 @@
   </footer>
 
   <script src="assets/js/dashboard.js"></script>
+  <script src="assets/js/resize.js"></script>
   <script>
     /* Cosmetic only: mirror the active module into the toolbar run-config chip
        and the status bar. Wraps the existing switchModule without changing it;
