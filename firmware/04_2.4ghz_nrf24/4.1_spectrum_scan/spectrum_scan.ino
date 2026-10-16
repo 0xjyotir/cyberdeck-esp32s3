@@ -31,8 +31,6 @@ static const uint8_t NRF_SCK_PIN  = 12;
 static const uint8_t NRF_MISO_PIN = 13;
 static const uint8_t NRF_MOSI_PIN = 11;
 
-static const int BAUD_RATE = 115200;
-
 RF24 radio(NRF_CE_PIN, NRF_CSN_PIN);
 JsonDocument doc;
 
@@ -64,7 +62,7 @@ bool ensureNrf() {
 }
 
 void setup() {
-  Serial.begin(BAUD_RATE);
+  Serial.begin(115200);
   unsigned long start = millis();
   while (!Serial && (millis() - start < 4000)) delay(10);
   Serial.println("\n[+] nRF24 Module 4.1 Spectrum Scan ready.");
