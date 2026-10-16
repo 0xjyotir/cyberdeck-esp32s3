@@ -94,8 +94,12 @@
                     <span id="ir-arrow" class="transform transition-transform duration-200 -rotate-90">▼</span>
                 </button>
                 <div id="ir-section" class="space-y-1 pl-2 hidden">
-                    <button onclick="switchModule('7.4')" class="sidebar-btn w-full text-left px-3 py-2 rounded text-gray-400 hover:bg-cyber-border/30 hover:text-gray-200 text-xs transition">7.4 IR Capture &amp; Decode</button>
-                    <button onclick="switchModule('7.3')" class="sidebar-btn w-full text-left px-3 py-2 rounded text-gray-400 hover:bg-cyber-border/30 hover:text-gray-200 text-xs transition">7.3 Replay Last Code</button>
+                    <button onclick="switchModule('7.1')" class="sidebar-btn w-full text-left px-3 py-2 rounded text-gray-400 hover:bg-cyber-border/30 hover:text-gray-200 text-xs transition">7.1 38kHz Carrier</button>
+                    <button onclick="switchModule('7.2')" class="sidebar-btn w-full text-left px-3 py-2 rounded text-gray-400 hover:bg-cyber-border/30 hover:text-gray-200 text-xs transition">7.2 Pulse Learning</button>
+                    <button onclick="switchModule('7.3')" class="sidebar-btn w-full text-left px-3 py-2 rounded text-gray-400 hover:bg-cyber-border/30 hover:text-gray-200 text-xs transition">7.3 Replay Last Capture</button>
+                    <button onclick="switchModule('7.4')" class="sidebar-btn w-full text-left px-3 py-2 rounded text-gray-400 hover:bg-cyber-border/30 hover:text-gray-200 text-xs transition">7.4 Protocol Decode</button>
+                    <button onclick="switchModule('7.5')" class="sidebar-btn w-full text-left px-3 py-2 rounded text-gray-400 hover:bg-cyber-border/30 hover:text-gray-200 text-xs transition">7.5 Signal Analysis</button>
+                    <button onclick="switchModule('7.6')" class="sidebar-btn w-full text-left px-3 py-2 rounded text-gray-400 hover:bg-cyber-border/30 hover:text-gray-200 text-xs transition">7.6 LED Circuit Test</button>
                 </div>
             </div>
 
@@ -265,6 +269,30 @@
             consoleBox.scrollTop = consoleBox.scrollHeight;
         }
 
+        // Infrared views: column headers and one row per telemetry frame
+        const dash = (v) => (v !== undefined && v !== null) ? v : '-';
+        const hex = (v) => v ? '0x' + String(v).toUpperCase() : '-';
+        const IR_VIEWS = {
+            '7.1': { live: true, headers: ['Carrier', 'Frequency', 'Duty', 'Pin'],
+                     row: d => ['ON', dash(d.freq_hz) + ' Hz', dash(d.duty_pct) + ' %', 'GPIO' + dash(d.pin)] },
+            '7.2': { headers: ['Pulses', 'Overflow', 'Total', 'Timings (µs)'],
+                     row: d => {
+                         const t = d.timings_us || [];
+                         const total = t.reduce((a, b) => a + b, 0);
+                         const preview = t.slice(0, 16).join(', ') + (t.length > 16 ? ', …' : '');
+                         return [dash(d.count), d.overflow ? 'YES' : 'no', total + ' µs', `<span title="${t.join(', ')}">${preview}</span>`];
+                     } },
+            '7.3': { headers: ['Protocol', 'Value', 'Bits / Pulses', 'Status'],
+                     row: d => [dash(d.protocol), hex(d.value), d.bits !== undefined ? d.bits + ' bits' : dash(d.count) + ' pulses', dash(d.action)] },
+            '7.4': { headers: ['Protocol', 'Value', 'Bits', 'Status'],
+                     row: d => [dash(d.protocol), hex(d.value), dash(d.bits), 'captured'] },
+            '7.5': { headers: ['Protocol', 'Mark / Space', 'Total', 'Duty'],
+                     row: d => [dash(d.protocol), `${dash(d.mark_us)} / ${dash(d.space_us)} µs`, dash(d.total_us) + ' µs',
+                                d.duty_pct !== undefined ? Number(d.duty_pct).toFixed(1) + ' %' : '-'] },
+            '7.6': { live: true, headers: ['Pulses Sent', 'Pulse Width', 'Period', 'Pin'],
+                     row: d => [dash(d.pulses), dash(d.pulse_us) + ' µs', dash(d.period_ms) + ' ms', 'GPIO' + dash(d.pin)] }
+        };
+
         function updateTelemetryTable(data) {
             const tbody = document.getElementById('telemetry-table-body');
             if (tbody.innerHTML.includes("Awaiting hardware telemetry")) {
@@ -286,19 +314,19 @@
                 if (msg.msg === "module_active" || msg.msg === "module_halted") return;  // already in the serial console
                 const isError = data.status === "error";
                 const label = msg.msg === "no_code_captured"
-                    ? "No IR code captured yet: run 7.4 and point a remote at the receiver first."
+                    ? "No IR code captured yet: run 7.2, 7.4 or 7.5 and point a remote at the receiver first."
+                    : msg.msg === "ledc_attach_failed"
+                    ? "Could not start the 38kHz carrier on the IR LED pin."
                     : msg.msg;
                 tr.innerHTML = `
                     <td colspan="4" class="p-3 ${isError ? 'text-red-400' : 'text-gray-400'}">[${mod}] ${isError ? 'ERROR' : 'STATUS'}: ${label}</td>
                 `;
-            } else if (currentModule.startsWith("7.")) {
-                // Infrared: 7.4 streams decoded captures, 7.3 reports a one-shot replay
-                tr.innerHTML = `
-                    <td class="p-3 font-bold text-cyber-yellow">${msg.protocol || 'UNKNOWN'}</td>
-                    <td class="p-3 text-gray-300">0x${(msg.value || '0').toUpperCase()}</td>
-                    <td class="p-3 text-gray-300">${msg.bits !== undefined ? msg.bits : '-'}</td>
-                    <td class="p-3 text-cyber-cyan text-xs">${msg.action || (mod === '7.4' ? 'captured' : 'ok')}</td>
-                `;
+            } else if (IR_VIEWS[currentModule]) {
+                const cells = IR_VIEWS[currentModule].row(msg);
+                const styles = ["font-bold text-cyber-yellow", "text-gray-300", "text-gray-300", "text-cyber-cyan text-xs"];
+                tr.innerHTML = cells.map((c, i) => `<td class="p-3 ${styles[i]}">${c}</td>`).join("");
+                // 7.1 and 7.6 report the same state every second: keep one live row
+                if (IR_VIEWS[currentModule].live) tbody.innerHTML = "";
             } else if (currentModule.startsWith("1.")) {
                 data = msg;
                 tr.innerHTML = `
@@ -340,8 +368,12 @@
                 '2.4': 'MODULE 2.4: CUSTOM BEACON SPAMMER',
                 '2.5': 'MODULE 2.5: GATT EXPLORATION & VALUE READER',
                 '2.6': 'MODULE 2.6: BLE DEVICE STRESS TESTING',
-                '7.4': 'MODULE 7.4: IR CAPTURE & PROTOCOL DECODE',
-                '7.3': 'MODULE 7.3: IR SIGNAL REPLAY'
+                '7.1': 'MODULE 7.1: 38KHZ CARRIER MODULATION',
+                '7.2': 'MODULE 7.2: IR PULSE LEARNING',
+                '7.3': 'MODULE 7.3: IR SIGNAL REPLAY',
+                '7.4': 'MODULE 7.4: IR PROTOCOL DECODE',
+                '7.5': 'MODULE 7.5: IR SIGNAL ANALYSIS',
+                '7.6': 'MODULE 7.6: IR LED CIRCUIT TEST'
             };
             const descs = {
                 '1.1': 'Scans local airspace for active BSSIDs, SSIDs, channels, and RSSI metrics.',
@@ -356,8 +388,12 @@
                 '2.4': 'Broadcasts custom beacon frames for range and scanner verification.',
                 '2.5': 'Connects to devices, inspects characteristics, and dumps live hex values.',
                 '2.6': 'Measures connection handshake latencies and stress-tests targets.',
+                '7.1': 'Drives a continuous 38kHz, 50% duty carrier on the IR LED. Check it with a phone camera or scope.',
+                '7.2': 'Records the raw mark/space timings of every IR burst the receiver sees.',
+                '7.3': 'Re-transmits the last capture from 7.2, 7.4 or 7.5 once (raw at 38kHz if the protocol is unknown), then returns to idle.',
                 '7.4': 'Listens on the IR receiver and decodes NEC, Sony, RC5, RC6 and other remote protocols.',
-                '7.3': 'Re-transmits the last code captured by 7.4 once through the IR LED, then returns to idle.'
+                '7.5': 'Sums mark and space time for each capture and reports the signal duty cycle.',
+                '7.6': 'Fires a 26µs pulse on the IR LED every 10ms to verify the driver circuit.'
             };
 
             // Update dynamic table column headers based on module group
@@ -369,13 +405,8 @@
                     <th class="p-3">CH</th>
                     <th class="p-3">RSSI</th>
                 `;
-            } else if (modId.startsWith("7.")) {
-                headerRow.innerHTML = `
-                    <th class="p-3">Protocol</th>
-                    <th class="p-3">Value</th>
-                    <th class="p-3">Bits</th>
-                    <th class="p-3">Status</th>
-                `;
+            } else if (IR_VIEWS[modId]) {
+                headerRow.innerHTML = IR_VIEWS[modId].headers.map(h => `<th class="p-3">${h}</th>`).join("");
             } else {
                 headerRow.innerHTML = `
                     <th class="p-3">Target / Name</th>
