@@ -4,6 +4,8 @@
 
 <h1 align="center">Cyberdeck · ESP32-S3</h1>
 
+<p align="center"><em>by <strong>Sannidhya Biswas</strong> &amp; <strong>Jyotiraditya Kansal</strong></em></p>
+
 <p align="center">
   A pocket-size, open-source field deck for wireless and physical security auditing.<br>
   One ESP32-S3 listens across Wi-Fi, Bluetooth, 2.4&nbsp;GHz, NFC and infrared, and streams every reading to a live browser dashboard.

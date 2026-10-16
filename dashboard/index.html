@@ -97,6 +97,7 @@
         <span class="word">on</span> <span class="word">one</span>
         <span class="word"><em>bench.</em></span>
       </h1>
+      <p class="byline">by <b>Sannidhya Biswas</b> &amp; <b>Jyotiraditya Kansal</b></p>
       <p class="lede">A pocket-size deck that listens across Wi-Fi, Bluetooth, 2.4&nbsp;GHz, NFC and infrared — and reports every reading straight to your browser.</p>
       <div class="cta">
         <a class="btn btn-primary" href="app.html">Open the dashboard <span class="arrow">&rarr;</span></a>
@@ -134,7 +135,7 @@
   </section>
 
   <footer><div class="wrap">
-    <span>Cyberdeck ESP32-S3 · field security &amp; diagnostics</span>
+    <span>Cyberdeck ESP32-S3 · field security &amp; diagnostics · by Sannidhya Biswas &amp; Jyotiraditya Kansal</span>
     <a class="btn" href="app.html">Open the dashboard <span class="arrow">&rarr;</span></a>
   </div></footer>
 
@@ -149,7 +150,7 @@
     if (!rm && window.anime) {
       anime.timeline({ easing: "easeOutExpo", delay: 300 })
         .add({ targets: ".hero .word", translateY: [40, 0], opacity: [0, 1], duration: 900, delay: anime.stagger(80) })
-        .add({ targets: ".lede, .cta, .spec", translateY: [20, 0], opacity: [0, 1], duration: 700, delay: anime.stagger(90) }, "-=500");
+        .add({ targets: ".byline, .lede, .cta, .spec", translateY: [20, 0], opacity: [0, 1], duration: 700, delay: anime.stagger(90) }, "-=500");
 
       document.querySelectorAll(".stat .n").forEach(el => {
         const obj = { v: 0 }, to = +el.dataset.to; el.textContent = "0";
