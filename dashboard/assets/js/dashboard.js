@@ -133,6 +133,27 @@
       row: d => [dash(d.pulses), dash(d.pulse_us) + " µs", dash(d.period_ms) + " ms", "GPIO" + dash(d.pin)] }
   };
 
+  /* ---- nRF24 (2.4 GHz) telemetry views ---- */
+  const NRF_VIEWS = {
+    "4.1": { live: false, headers: ["Channel", "Frequency", "Level", "Signal"],
+      row: d => {
+        const lvl = Number(d.level) || 0;
+        const pct = Math.min(100, Math.round(lvl / 32 * 100));
+        return ["CH " + dash(d.ch), dash(d.mhz) + " MHz", lvl + " / 32",
+          `<span style="display:inline-block;width:64px;height:6px;border-radius:3px;background:rgba(255,255,255,.12);vertical-align:middle"><i style="display:block;height:100%;border-radius:3px;width:${pct}%;background:var(--nrf)"></i></span>`];
+      } },
+    "4.2": { headers: ["Channel", "Address", "Length", "Payload"],
+      row: d => ["CH " + dash(d.ch), dash(d.addr), dash(d.len) + " B", dash(d.payload)] },
+    "4.3": { headers: ["Channel", "Candidate Address", "Hits"],
+      row: d => ["CH " + dash(d.ch), dash(d.addr), dash(d.hits)] },
+    "4.4": { headers: ["Channel", "Address", "Length", "Rate", "Guess"],
+      row: d => ["CH " + dash(d.ch), dash(d.addr), dash(d.len) + " B", dash(d.rate), dash(d.guess)] },
+    "4.5": { live: true, headers: ["Stored", "Last Address", "Last Payload"],
+      row: d => [dash(d.stored), dash(d.last_addr), dash(d.last)] },
+    "4.6": { live: true, headers: ["Channel", "Address", "Sent", "Ack"],
+      row: d => ["CH " + dash(d.ch), dash(d.addr), dash(d.sent), d.ack ? "ACK" : "no ack"] }
+  };
+
   function updateTelemetry(data) {
     const tbody = $("telemetry-body");
     if (tbody.querySelector(".empty")) tbody.innerHTML = "";
@@ -157,6 +178,11 @@
       const styles = ["color:var(--ir);font-weight:700", "color:var(--text)", "color:var(--text)", "color:var(--wifi);font-size:12px"];
       tr.innerHTML = cells.map((c, i) => `<td style="${styles[i]}">${c}</td>`).join("");
       if (IR_VIEWS[currentModule].live) tbody.innerHTML = "";
+    } else if (NRF_VIEWS[currentModule]) {
+      const cells = NRF_VIEWS[currentModule].row(msg);
+      const styles = ["color:var(--nrf);font-weight:700", "color:var(--text)", "color:var(--text)", "color:var(--mute);font-size:12px"];
+      tr.innerHTML = cells.map((c, i) => `<td style="${styles[i] || "color:var(--text)"}">${c}</td>`).join("");
+      if (NRF_VIEWS[currentModule].live) tbody.innerHTML = "";
     } else if (currentModule.startsWith("1.")) {
       const d = msg;
       tr.innerHTML = `
@@ -183,6 +209,9 @@
     "2.1": "MODULE 2.1: BLE SCAN & FINGERPRINTING", "2.2": "MODULE 2.2: GATT SERVICE ENUMERATION",
     "2.3": "MODULE 2.3: ADVERTISEMENT SNIFFER", "2.4": "MODULE 2.4: CUSTOM BEACON SPAMMER",
     "2.5": "MODULE 2.5: GATT EXPLORATION & VALUE READER", "2.6": "MODULE 2.6: BLE DEVICE STRESS TESTING",
+    "4.1": "MODULE 4.1: 2.4GHZ SPECTRUM SCAN", "4.2": "MODULE 4.2: nRF24 PACKET SNIFFER",
+    "4.3": "MODULE 4.3: nRF24 ADDRESS DISCOVERY", "4.4": "MODULE 4.4: nRF24 PROTOCOL ANALYSIS",
+    "4.5": "MODULE 4.5: nRF24 PACKET STORAGE", "4.6": "MODULE 4.6: nRF24 LAB TRANSMITTER",
     "7.1": "MODULE 7.1: 38KHZ CARRIER MODULATION", "7.2": "MODULE 7.2: IR PULSE LEARNING",
     "7.3": "MODULE 7.3: IR SIGNAL REPLAY", "7.4": "MODULE 7.4: IR PROTOCOL DECODE",
     "7.5": "MODULE 7.5: IR SIGNAL ANALYSIS", "7.6": "MODULE 7.6: IR LED CIRCUIT TEST"
@@ -200,6 +229,12 @@
     "2.4": "Broadcasts custom beacon frames for range and scanner verification.",
     "2.5": "Connects to devices, inspects characteristics, and dumps live hex values.",
     "2.6": "Measures connection handshake latencies and stress-tests targets.",
+    "4.1": "Sweeps all 126 nRF24 channels (2400–2525 MHz) and reports carrier energy per channel.",
+    "4.2": "Listens on a hopping channel for nRF24 payloads and dumps raw packet bytes as hex.",
+    "4.3": "Preamble-sniffs the band and reports candidate nRF24 pipe addresses.",
+    "4.4": "Captures packets and reports length, data rate and a traffic-type guess.",
+    "4.5": "Buffers captured packets in RAM and tracks a running stored count.",
+    "4.6": "Low-power test transmitter — sends to your own nRF24 node for link/range testing.",
     "7.1": "Drives a continuous 38kHz, 50% duty carrier on the IR LED. Check it with a phone camera or scope.",
     "7.2": "Records the raw mark/space timings of every IR burst the receiver sees.",
     "7.3": "Re-transmits the last capture from 7.2, 7.4 or 7.5 once (raw at 38kHz if the protocol is unknown), then returns to idle.",
@@ -221,6 +256,8 @@
       headerRow.innerHTML = `<th>SSID / Target</th><th>MAC / BSSID</th><th>CH</th><th>RSSI</th>`;
     } else if (IR_VIEWS[modId]) {
       headerRow.innerHTML = IR_VIEWS[modId].headers.map(h => `<th>${h}</th>`).join("");
+    } else if (NRF_VIEWS[modId]) {
+      headerRow.innerHTML = NRF_VIEWS[modId].headers.map(h => `<th>${h}</th>`).join("");
     } else {
       headerRow.innerHTML = `<th>Target / Name</th><th>UUID / Addr</th><th>State / RSSI</th><th>Payload / Status</th>`;
     }

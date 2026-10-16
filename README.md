@@ -53,7 +53,7 @@ The browser sends `{"module": "7.4", "action": "START"}` and the board answers w
 | 01 | **Wi-Fi**: scan, wardriving log, promiscuous capture, network discovery, AP hosting, frame lab | ESP32-S3 radio | ✅ Firmware + dashboard |
 | 02 | **BLE**: scan, GATT services, advertisement capture, custom beacons, GATT explorer, device testing | ESP32-S3 radio | ✅ Firmware + dashboard |
 | 07 | **Infrared**: 38&nbsp;kHz carrier, pulse learning, replay, protocol decode, signal analysis, LED test | 38&nbsp;kHz IR pair (RX GPIO4, TX GPIO5) | 🧪 Firmware + dashboard, hardware testing in progress |
-| 04 | **nRF24**: 2.4&nbsp;GHz spectrum and packet analysis | nRF24L01+ | ⏳ Planned |
+| 04 | **nRF24**: spectrum scan, packet sniffer, address discovery, protocol analysis, packet storage, lab transmitter (4.1–4.6) | nRF24L01+ (SPI: CE&nbsp;6, CSN&nbsp;7, SCK&nbsp;12, MISO&nbsp;13, MOSI&nbsp;11) | 🧪 Firmware + dashboard, hardware untested |
 | 05 | **NFC**: ISO&nbsp;14443A read, NDEF, dumps | PN532 (13.56&nbsp;MHz) | ⏳ Planned |
 | — | **Command terminal**: handheld UI and IR blaster | M5StickC Plus2 | ⏳ Planned |
 
