@@ -35,6 +35,8 @@
 
         <!-- dim base traces -->
         <g fill="none" stroke="var(--line2)" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round">
+          <path class="trace-base" d="M640 316 L640 250 L700 250 L770 180 L940 180"/>
+          <path class="trace-base" d="M560 316 L560 250 L520 250 L470 180 L330 180"/>
           <path class="trace-base" d="M650 380 L860 380 L930 360 L1080 360"/>
           <path class="trace-base" d="M650 410 L650 560 L820 560 L900 650"/>
           <path class="trace-base" d="M550 410 L550 520 L380 520 L300 650"/>
@@ -43,6 +45,8 @@
 
         <!-- bright signal pulses -->
         <g fill="none" stroke-width="3.4" stroke-linejoin="round" stroke-linecap="round" filter="url(#glow)">
+          <path id="pulse-wifi" d="M640 316 L640 250 L700 250 L770 180 L940 180" stroke-dasharray="26 2600" stroke-dashoffset="2400"/>
+          <path id="pulse-m5" d="M560 316 L560 250 L520 250 L470 180 L330 180" stroke-dasharray="26 2600" stroke-dashoffset="2400"/>
           <path id="pulse-ble"  d="M650 380 L860 380 L930 360 L1080 360" stroke-dasharray="26 2600" stroke-dashoffset="2400"/>
           <path id="pulse-ir"   d="M650 410 L650 560 L820 560 L900 650" stroke-dasharray="26 2600" stroke-dashoffset="2400"/>
           <path id="pulse-nrf"  d="M550 410 L550 520 L380 520 L300 650" stroke-dasharray="26 2600" stroke-dashoffset="2400"/>
@@ -51,6 +55,8 @@
 
         <!-- edge pads + labels -->
         <g class="pad" font-family="var(--body)" font-size="13" letter-spacing="1.5">
+          <circle cx="940" cy="180" r="6" fill="var(--wifi)"/><text x="940" y="162" fill="var(--wifi)" text-anchor="middle">WIFI</text>
+          <circle cx="330" cy="180" r="6" fill="var(--m5)"/><text x="330" y="162" fill="var(--m5)" text-anchor="middle">M5STICKC PLUS2</text>
           <circle cx="1080" cy="360" r="6" fill="var(--ble)"/><text x="1080" y="342" fill="var(--ble)" text-anchor="middle">BLE</text>
           <circle cx="900" cy="650" r="6" fill="var(--ir)"/><text x="900" y="676" fill="var(--ir)" text-anchor="middle">IR</text>
           <circle cx="300" cy="650" r="6" fill="var(--nrf)"/><text x="300" y="676" fill="var(--nrf)" text-anchor="middle">NRF24</text>
@@ -77,7 +83,7 @@
 
         <!-- header pins along top and bottom -->
         <g class="pin" fill="var(--bg)" stroke="var(--line2)" stroke-width="1.5">
-          <circle cx="210" cy="140" r="6"/><circle cx="240" cy="140" r="6"/><circle cx="270" cy="140" r="6"/><circle cx="300" cy="140" r="6"/><circle cx="330" cy="140" r="6"/><circle cx="360" cy="140" r="6"/>
+          <circle cx="960" cy="125" r="6"/><circle cx="990" cy="125" r="6"/><circle cx="1020" cy="125" r="6"/><circle cx="1050" cy="125" r="6"/><circle cx="1080" cy="125" r="6"/>
           <circle cx="840" cy="620" r="6"/><circle cx="870" cy="620" r="6"/><circle cx="900" cy="620" r="6" opacity="0.001"/>
           <circle cx="210" cy="600" r="6"/><circle cx="240" cy="600" r="6"/><circle cx="270" cy="600" r="6"/>
         </g>
