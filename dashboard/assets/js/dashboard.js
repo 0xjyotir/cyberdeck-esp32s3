@@ -109,6 +109,17 @@
     box.scrollTop = box.scrollHeight;
   }
 
+  /* ---- Clear buttons: view-only, the board keeps streaming ---- */
+  const EMPTY_ROW = `<tr><td colspan="4" class="empty">Awaiting hardware telemetry stream…</td></tr>`;
+  window.clearTelemetry = function () {
+    $("telemetry-body").innerHTML = EMPTY_ROW;
+    if (window.Spectrum) Spectrum.reset();
+  };
+  window.clearConsole = function () {
+    $("console").innerHTML = "";
+    appendLog("[system] Console cleared.", "sys");
+  };
+
   /* ---- infrared telemetry views (unchanged) ---- */
   const dash = (v) => (v !== undefined && v !== null) ? v : "-";
   const hex = (v) => v ? "0x" + String(v).toUpperCase() : "-";
@@ -156,10 +167,25 @@
 
   function updateTelemetry(data) {
     const tbody = $("telemetry-body");
-    if (tbody.querySelector(".empty")) tbody.innerHTML = "";
     const msg = data.data || data;
     const mod = data.module || currentModule;
     if (mod !== currentModule && mod !== "SYS") return;
+
+    // 4.1 renders as the spectrum graph instead of table rows; the raw JSON
+    // line has already been printed to the serial console by handleIncoming().
+    if (currentModule === "4.1" && window.Spectrum) {
+      if (msg.ch !== undefined) { Spectrum.push(msg.ch, msg.level); return; }
+      if (msg.msg !== undefined && msg.msg !== "module_active" && msg.msg !== "module_halted") {
+        const isError = data.status === "error";
+        const label = msg.msg === "nrf_not_found"
+          ? "nRF24 not found: check CE=6 CSN=7 SCK=12 MISO=13 MOSI=11, 3.3 V and the 10 µF cap."
+          : msg.msg;
+        Spectrum.note(`[${mod}] ${isError ? "ERROR" : "STATUS"}: ${label}`, isError);
+      }
+      return;
+    }
+
+    if (tbody.querySelector(".empty")) tbody.innerHTML = "";
 
     const tr = document.createElement("tr");
     const isStatusOnly = msg.msg !== undefined && Object.keys(msg).length === 1;
@@ -264,7 +290,13 @@
 
     $("module-title").textContent = TITLES[modId];
     $("module-desc").textContent = DESCS[modId];
-    $("telemetry-body").innerHTML = `<tr><td colspan="4" class="empty">Awaiting hardware telemetry stream…</td></tr>`;
+    $("telemetry-body").innerHTML = EMPTY_ROW;
+
+    // 4.1 swaps the table for the spectrum graph; every other module uses the table.
+    const spectrumOn = modId === "4.1" && !!window.Spectrum;
+    document.querySelector(".table-scroll").hidden = spectrumOn;
+    if (window.Spectrum) { Spectrum.show(spectrumOn); if (spectrumOn) Spectrum.reset(); }
+
     appendLog(`Switched active context to Module ${modId}`, "sys");
   };
 

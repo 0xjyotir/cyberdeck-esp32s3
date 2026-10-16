@@ -114,7 +114,22 @@
 
       <div class="panels">
         <section class="panel panel-telemetry">
-          <h3>Live telemetry feed</h3>
+          <div class="panel-hd">
+            <h3>Live telemetry feed</h3>
+            <button class="clear-btn" onclick="clearTelemetry()" title="Clear the telemetry view" aria-label="Clear telemetry">Clear</button>
+          </div>
+          <!-- 4.1 spectrum graph (spectrum.js); shown in place of the table for 4.1 -->
+          <div class="spectrum" id="spectrum" hidden>
+            <div class="spectrum-meta">
+              <span id="spec-sweep">sweep #0</span>
+              <span id="spec-peak">peak · quiet</span>
+              <span class="spec-note" id="spec-note"></span>
+            </div>
+            <div class="spectrum-stage">
+              <canvas aria-label="nRF24 2.4 GHz spectrum, channels 0 to 125" role="img"></canvas>
+              <div class="spectrum-tip" hidden></div>
+            </div>
+          </div>
           <div class="table-scroll">
             <table>
               <thead><tr id="table-headers">
@@ -135,6 +150,7 @@
             <span class="tab on"><span class="d"></span> Serial</span>
             <span class="tab">Telemetry</span>
             <span class="tab">Log</span>
+            <button class="clear-btn" onclick="clearConsole()" title="Clear the serial console" aria-label="Clear serial console">Clear</button>
           </div>
           <div class="console" id="console">
             <div class="sys">[system] Dashboard interface ready. Connect USB serial to begin.</div>
@@ -154,6 +170,7 @@
     <span class="sb-item"><span class="sb-dot"></span> Ready</span>
   </footer>
 
+  <script src="assets/js/spectrum.js"></script>
   <script src="assets/js/dashboard.js"></script>
   <script src="assets/js/resize.js"></script>
   <script>
