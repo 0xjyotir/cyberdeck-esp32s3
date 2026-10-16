@@ -23,7 +23,7 @@
 
 **👉 [rronium.github.io/cyberdeck-esp32s3](https://rronium.github.io/cyberdeck-esp32s3/)**
 
-The welcome page introduces the deck; **Try it** opens the dashboard. Plug the ESP32-S3 into your computer over USB, click **Connect USB serial**, pick a module and press **Start module**. Drag the edges between panes (sidebar | telemetry | serial console) to resize them; no pane grows past 75% of the space, sizes are remembered, and double-clicking an edge resets it. Each pane has a **Clear** button, and nRF24 module 4.1 draws a live spectrum graph (bars, peak hold, waterfall) instead of a table, while the raw JSON still scrolls in the serial console.
+The welcome page introduces the deck; **Try it** opens the dashboard. It also carries **the field manual** — a reference below the subsystem cards that explains all 24 implemented functions in depth (what each does, what every telemetry field means, an example of the live output) and links straight to each function's standalone `.ino` on GitHub. Plug the ESP32-S3 into your computer over USB, click **Connect USB serial**, pick a module and press **Start module**. Drag the edges between panes (sidebar | telemetry | serial console) to resize them; no pane grows past 75% of the space, sizes are remembered, and double-clicking an edge resets it. Each pane has a **Clear** button, and nRF24 module 4.1 draws a live spectrum graph (bars, peak hold, waterfall) instead of a table, while the raw JSON still scrolls in the serial console.
 
 > Web Serial only works in desktop **Chrome** or **Edge**. The page talks to the board plugged into *your* computer; nothing is sent to a server.
 
