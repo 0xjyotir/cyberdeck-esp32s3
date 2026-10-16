@@ -1,0 +1,239 @@
+/* Cyberdeck dashboard logic — Web Serial bridge + module switching + telemetry
+   rendering. Ported unchanged from the original single-file dashboard; only the
+   DOM wiring (class names, accent colour per subsystem) was updated to match the
+   restyled markup. Serial protocol is identical: JSON at 115200, host sends
+   {module, action:"START"|"STOP"}, board replies {module, status, data:{...}}. */
+(function () {
+  let port, reader, inputDone;
+  let currentModule = "1.1";
+
+  const $ = (id) => document.getElementById(id);
+
+  /* ---- subsystem accent, used for the module panel + active sidebar item ---- */
+  const GROUP = (m) => m.startsWith("1.") ? "wifi" : m.startsWith("2.") ? "ble"
+    : m.startsWith("4.") ? "nrf" : m.startsWith("5.") ? "nfc" : m.startsWith("7.") ? "ir" : "wifi";
+  const ACCENT = { wifi: "--wifi", ble: "--ble", ir: "--ir", nrf: "--nrf", nfc: "--nfc" };
+
+  /* ---- collapsible subsystems ---- */
+  window.toggleSub = function (btn) {
+    const list = document.getElementById(btn.getAttribute("aria-controls"));
+    const open = btn.getAttribute("aria-expanded") === "true";
+    btn.setAttribute("aria-expanded", String(!open));
+    list.hidden = open;
+  };
+
+  /* ---- serial connection ---- */
+  window.toggleSerial = async function () { port ? await disconnect() : await connect(); };
+
+  async function connect() {
+    if (!("serial" in navigator)) {
+      appendLog("[-] Web Serial is not available in this browser. Use Chrome or Edge over HTTPS/localhost.", "err");
+      return;
+    }
+    try {
+      port = await navigator.serial.requestPort();
+      await port.open({ baudRate: 115200 });
+      setConnected(true);
+      appendLog("USB serial port opened at 115200 baud.", "sys");
+      readLoop();
+    } catch (err) {
+      appendLog("[-] Failed to open serial port: " + err, "err");
+      port = null;
+    }
+  }
+
+  async function disconnect() {
+    if (reader) { await reader.cancel(); await inputDone.catch(() => {}); }
+    if (port) { await port.close(); port = null; }
+    setConnected(false);
+    appendLog("Serial port closed.", "sys");
+  }
+
+  function setConnected(on) {
+    const pill = $("conn-status"), btn = $("serial-btn"), dot = $("live-dot");
+    if (on) {
+      pill.textContent = "CONNECTED · 115200"; pill.classList.add("ok");
+      btn.textContent = "Disconnect"; dot.classList.add("on");
+    } else {
+      pill.textContent = "DISCONNECTED"; pill.classList.remove("ok");
+      btn.textContent = "Connect USB serial"; dot.classList.remove("on");
+    }
+  }
+
+  async function readLoop() {
+    const dec = new TextDecoderStream();
+    inputDone = port.readable.pipeTo(dec.writable);
+    reader = dec.readable.getReader();
+    try {
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        if (value) handleIncoming(value);
+      }
+    } catch (e) { appendLog("[-] Stream read error: " + e, "err"); }
+  }
+
+  let lineBuffer = "";
+  function handleIncoming(text) {
+    lineBuffer += text;
+    const lines = lineBuffer.split("\n");
+    lineBuffer = lines.pop();
+    for (let line of lines) {
+      line = line.trim();
+      if (!line) continue;
+      appendLog(line);
+      if (line.startsWith("{") && line.endsWith("}")) {
+        try { updateTelemetry(JSON.parse(line)); } catch (e) {}
+      }
+    }
+  }
+
+  window.sendCommand = async function (action) {
+    if (!port || !port.writable) {
+      appendLog("[-] Connect your ESP32 over USB serial first.", "err");
+      return;
+    }
+    const cmd = JSON.stringify({ module: currentModule, action }) + "\n";
+    const writer = port.writable.getWriter();
+    await writer.write(new TextEncoder().encode(cmd));
+    writer.releaseLock();
+    appendLog(cmd.trim(), "sent");
+  };
+
+  function appendLog(message, cls) {
+    const box = $("console");
+    const div = document.createElement("div");
+    if (cls) div.className = cls;
+    div.textContent = message;
+    box.appendChild(div);
+    box.scrollTop = box.scrollHeight;
+  }
+
+  /* ---- infrared telemetry views (unchanged) ---- */
+  const dash = (v) => (v !== undefined && v !== null) ? v : "-";
+  const hex = (v) => v ? "0x" + String(v).toUpperCase() : "-";
+  const IR_VIEWS = {
+    "7.1": { live: true, headers: ["Carrier", "Frequency", "Duty", "Pin"],
+      row: d => ["ON", dash(d.freq_hz) + " Hz", dash(d.duty_pct) + " %", "GPIO" + dash(d.pin)] },
+    "7.2": { headers: ["Pulses", "Overflow", "Total", "Timings (µs)"],
+      row: d => {
+        const t = d.timings_us || [];
+        const total = t.reduce((a, b) => a + b, 0);
+        const preview = t.slice(0, 16).join(", ") + (t.length > 16 ? ", …" : "");
+        return [dash(d.count), d.overflow ? "YES" : "no", total + " µs", `<span title="${t.join(", ")}">${preview}</span>`];
+      } },
+    "7.3": { headers: ["Protocol", "Value", "Bits / Pulses", "Status"],
+      row: d => [dash(d.protocol), hex(d.value), d.bits !== undefined ? d.bits + " bits" : dash(d.count) + " pulses", dash(d.action)] },
+    "7.4": { headers: ["Protocol", "Value", "Bits", "Status"],
+      row: d => [dash(d.protocol), hex(d.value), dash(d.bits), "captured"] },
+    "7.5": { headers: ["Protocol", "Mark / Space", "Total", "Duty"],
+      row: d => [dash(d.protocol), `${dash(d.mark_us)} / ${dash(d.space_us)} µs`, dash(d.total_us) + " µs",
+        d.duty_pct !== undefined ? Number(d.duty_pct).toFixed(1) + " %" : "-"] },
+    "7.6": { live: true, headers: ["Pulses Sent", "Pulse Width", "Period", "Pin"],
+      row: d => [dash(d.pulses), dash(d.pulse_us) + " µs", dash(d.period_ms) + " ms", "GPIO" + dash(d.pin)] }
+  };
+
+  function updateTelemetry(data) {
+    const tbody = $("telemetry-body");
+    if (tbody.querySelector(".empty")) tbody.innerHTML = "";
+    const msg = data.data || data;
+    const mod = data.module || currentModule;
+    if (mod !== currentModule && mod !== "SYS") return;
+
+    const tr = document.createElement("tr");
+    const isStatusOnly = msg.msg !== undefined && Object.keys(msg).length === 1;
+
+    if (isStatusOnly) {
+      if (msg.msg === "module_active" || msg.msg === "module_halted") return;
+      const isError = data.status === "error";
+      const label = msg.msg === "no_code_captured"
+        ? "No IR code captured yet: run 7.2, 7.4 or 7.5 and point a remote at the receiver first."
+        : msg.msg === "ledc_attach_failed"
+        ? "Could not start the 38kHz carrier on the IR LED pin."
+        : msg.msg;
+      tr.innerHTML = `<td colspan="4" style="color:${isError ? "var(--err)" : "var(--mute)"}">[${mod}] ${isError ? "ERROR" : "STATUS"}: ${label}</td>`;
+    } else if (IR_VIEWS[currentModule]) {
+      const cells = IR_VIEWS[currentModule].row(msg);
+      const styles = ["color:var(--ir);font-weight:700", "color:var(--text)", "color:var(--text)", "color:var(--wifi);font-size:12px"];
+      tr.innerHTML = cells.map((c, i) => `<td style="${styles[i]}">${c}</td>`).join("");
+      if (IR_VIEWS[currentModule].live) tbody.innerHTML = "";
+    } else if (currentModule.startsWith("1.")) {
+      const d = msg;
+      tr.innerHTML = `
+        <td style="color:var(--wifi);font-weight:700">${d.ssid || "Hidden"}</td>
+        <td style="color:var(--mute)">${d.bssid || "N/A"}</td>
+        <td style="color:var(--text)">${d.ch || "-"}</td>
+        <td style="color:var(--ir)">${d.rssi || "-"} dBm</td>`;
+    } else {
+      const d = msg;
+      tr.innerHTML = `
+        <td style="color:var(--ble);font-weight:700">${d.name || d.addr || "BLE Device"}</td>
+        <td style="color:var(--mute);font-size:12px">${d.uuid || d.service || "N/A"}</td>
+        <td style="color:var(--text)">${d.rssi ? d.rssi + " dBm" : (d.canRead !== undefined ? (d.canRead ? "READ" : "LOCKED") : "-")}</td>
+        <td style="color:var(--wifi);font-size:12px">${d.value_hex || d.payload || d.status || "Active"}</td>`;
+    }
+    tbody.insertBefore(tr, tbody.firstChild);
+  }
+
+  /* ---- module metadata (unchanged) ---- */
+  const TITLES = {
+    "1.1": "MODULE 1.1: ACTIVE WIFI SCANNER", "1.2": "MODULE 1.2: WARDRIVING LOGGER",
+    "1.3": "MODULE 1.3: PROMISCUOUS SNIFFER", "1.4": "MODULE 1.4: NETWORK DISCOVERY",
+    "1.5": "MODULE 1.5: AP HOSTING", "1.6": "MODULE 1.6: FRAME LAB TESTING",
+    "2.1": "MODULE 2.1: BLE SCAN & FINGERPRINTING", "2.2": "MODULE 2.2: GATT SERVICE ENUMERATION",
+    "2.3": "MODULE 2.3: ADVERTISEMENT SNIFFER", "2.4": "MODULE 2.4: CUSTOM BEACON SPAMMER",
+    "2.5": "MODULE 2.5: GATT EXPLORATION & VALUE READER", "2.6": "MODULE 2.6: BLE DEVICE STRESS TESTING",
+    "7.1": "MODULE 7.1: 38KHZ CARRIER MODULATION", "7.2": "MODULE 7.2: IR PULSE LEARNING",
+    "7.3": "MODULE 7.3: IR SIGNAL REPLAY", "7.4": "MODULE 7.4: IR PROTOCOL DECODE",
+    "7.5": "MODULE 7.5: IR SIGNAL ANALYSIS", "7.6": "MODULE 7.6: IR LED CIRCUIT TEST"
+  };
+  const DESCS = {
+    "1.1": "Scans local airspace for active BSSIDs, SSIDs, channels, and RSSI metrics.",
+    "1.2": "Logs mobile access points and geolocation telemetry data.",
+    "1.3": "Captures raw 802.11 management and data frames in promiscuous mode.",
+    "1.4": "Discovers connected clients and active hosts on the target network.",
+    "1.5": "Hosts an administrative Access Point for localized web control.",
+    "1.6": "Injects custom test frames and verifies injection success rates.",
+    "2.1": "Discovers nearby BLE peripherals, MAC addresses, RSSI, and mfg data.",
+    "2.2": "Enumerates GATT services, characteristic UUIDs, and permission flags.",
+    "2.3": "Intercepts raw low-level advertisement payloads and hex packets.",
+    "2.4": "Broadcasts custom beacon frames for range and scanner verification.",
+    "2.5": "Connects to devices, inspects characteristics, and dumps live hex values.",
+    "2.6": "Measures connection handshake latencies and stress-tests targets.",
+    "7.1": "Drives a continuous 38kHz, 50% duty carrier on the IR LED. Check it with a phone camera or scope.",
+    "7.2": "Records the raw mark/space timings of every IR burst the receiver sees.",
+    "7.3": "Re-transmits the last capture from 7.2, 7.4 or 7.5 once (raw at 38kHz if the protocol is unknown), then returns to idle.",
+    "7.4": "Listens on the IR receiver and decodes NEC, Sony, RC5, RC6 and other remote protocols.",
+    "7.5": "Sums mark and space time for each capture and reports the signal duty cycle.",
+    "7.6": "Fires a 26µs pulse on the IR LED every 10ms to verify the driver circuit."
+  };
+
+  window.switchModule = function (modId, btn) {
+    currentModule = modId;
+    document.querySelectorAll(".mod-btn").forEach(b => b.classList.remove("active"));
+    if (btn) btn.classList.add("active");
+
+    const group = GROUP(modId);
+    $("module-bar").style.setProperty("--accent", `var(${ACCENT[group]})`);
+
+    const headerRow = $("table-headers");
+    if (modId.startsWith("1.")) {
+      headerRow.innerHTML = `<th>SSID / Target</th><th>MAC / BSSID</th><th>CH</th><th>RSSI</th>`;
+    } else if (IR_VIEWS[modId]) {
+      headerRow.innerHTML = IR_VIEWS[modId].headers.map(h => `<th>${h}</th>`).join("");
+    } else {
+      headerRow.innerHTML = `<th>Target / Name</th><th>UUID / Addr</th><th>State / RSSI</th><th>Payload / Status</th>`;
+    }
+
+    $("module-title").textContent = TITLES[modId];
+    $("module-desc").textContent = DESCS[modId];
+    $("telemetry-body").innerHTML = `<tr><td colspan="4" class="empty">Awaiting hardware telemetry stream…</td></tr>`;
+    appendLog(`Switched active context to Module ${modId}`, "sys");
+  };
+
+  /* boot: select the first module */
+  document.addEventListener("DOMContentLoaded", () => {
+    const first = document.querySelector('.mod-btn[data-mod="1.1"]');
+    window.switchModule("1.1", first);
+  });
+})();

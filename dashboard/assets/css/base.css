@@ -1,0 +1,91 @@
+/* Cyberdeck design tokens + shared pieces (welcome page and dashboard).
+   Layout concept: a dark bench at night, lit only by the signals the deck
+   is listening to. Each subsystem owns one hue and keeps it everywhere. */
+:root {
+  --bg: #0b0c10;
+  --bg2: #101219;
+  --panel: #13161e;
+  --panel2: #191d27;
+  --line: #232835;
+  --line2: #313849;
+  --text: #ece9e2;
+  --mute: #959baa;
+  --faint: #5f6677;
+
+  --wifi: #3ddbd9;
+  --ble: #ff7eb6;
+  --ir: #ffb454;
+  --nrf: #8fa8ff;
+  --nfc: #b7e36b;
+  --ok: #57e389;
+  --err: #ff6b6b;
+
+  --display: "Bricolage Grotesque", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  --body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+
+  --radius: 10px;
+  --gutter: max(16px, 4vw);
+  color-scheme: dark;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 400 15px/1.6 var(--body);
+  -webkit-font-smoothing: antialiased;
+}
+a { color: inherit; }
+h1, h2, h3 { font-family: var(--display); font-weight: 700; line-height: 1.05; margin: 0; text-wrap: balance; }
+p { margin: 0; }
+code, .mono { font-family: var(--mono); }
+:focus-visible { outline: 2px solid var(--wifi); outline-offset: 3px; border-radius: 4px; }
+
+.eyebrow {
+  font: 500 12px/1 var(--mono);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+
+/* Buttons */
+.btn {
+  display: inline-flex; align-items: center; gap: 10px;
+  padding: 11px 20px;
+  border-radius: 999px;
+  border: 1px solid var(--line2);
+  background: transparent;
+  color: var(--text);
+  font: 600 14px/1 var(--body);
+  letter-spacing: 0.01em;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background .2s, border-color .2s, color .2s, transform .2s;
+}
+.btn:hover { border-color: var(--text); }
+.btn:active { transform: translateY(1px); }
+.btn-primary { background: var(--text); color: var(--bg); border-color: var(--text); }
+.btn-primary:hover { background: #fff; }
+.btn .arrow { transition: transform .25s; }
+.btn:hover .arrow { transform: translateX(3px); }
+
+/* Brand mark */
+.brand { display: inline-flex; align-items: center; gap: 10px; text-decoration: none; }
+.brand-mark { display: grid; grid-template-columns: repeat(3, 5px); gap: 3px; }
+.brand-mark i { width: 5px; height: 5px; border-radius: 50%; background: var(--faint); }
+.brand-mark i:nth-child(1) { background: var(--wifi); }
+.brand-mark i:nth-child(5) { background: var(--ble); }
+.brand-mark i:nth-child(9) { background: var(--ir); }
+.brand-name { font: 700 17px/1 var(--display); letter-spacing: -0.01em; }
+.brand-name span { color: var(--mute); font-weight: 500; }
+
+/* Animated dot field (see assets/js/dotgrid.js) */
+.dotgrid { position: absolute; inset: 0; display: grid; justify-content: center; align-content: center; overflow: hidden; pointer-events: none; }
+.dotgrid .dot { width: 4px; height: 4px; margin: auto; border-radius: 50%; background: var(--line2); will-change: transform; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+}

@@ -1,345 +1,176 @@
 <!DOCTYPE html>
-<html lang="en" class="dark">
+<html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ESP32-S3 Cyberdeck Dashboard</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-        tailwind.config = {
-            darkMode: 'class',
-            theme: {
-                extend: {
-                    colors: {
-                        cyber: {
-                            bg: '#05050a',
-                            panel: '#0a0a16',
-                            border: '#1e1b4b',
-                            cyan: '#06b6d4',
-                            green: '#10b981',
-                            magenta: '#ec4899',
-                            yellow: '#f59e0b'
-                        }
-                    },
-                    fontFamily: {
-                        mono: ['Courier New', 'Courier', 'monospace']
-                    }
-                }
-            }
-        }
-    </script>
-    <style>
-        .glow-cyan { text-shadow: 0 0 10px rgba(6, 182, 212, 0.5); }
-        .glow-green { text-shadow: 0 0 10px rgba(16, 185, 129, 0.5); }
-        .scanline {
-            background: linear-gradient(to bottom, rgba(255,255,255,0), rgba(255,255,255,0) 50%, rgba(0, 0, 0, 0.3) 50%, rgba(0, 0, 0, 0.3));
-            background-size: 100% 4px;
-        }
-    </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>Cyberdeck ESP32-S3</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+  <link rel="stylesheet" href="assets/css/base.css">
+  <link rel="stylesheet" href="assets/css/welcome.css">
 </head>
-<body class="bg-cyber-bg text-gray-200 font-mono h-screen flex flex-col overflow-hidden scanline">
+<body>
 
-    <header class="bg-cyber-panel border-b border-cyber-border px-6 py-4 flex justify-between items-center z-10">
-        <div class="flex items-center space-x-3">
-            <div class="w-3 h-3 bg-cyber-green rounded-full animate-pulse"></div>
-            <h1 class="text-xl font-bold tracking-widest text-cyber-cyan glow-cyan">CYBERDECK-esp32s3</h1>
-        </div>
-        <div class="flex items-center space-x-4">
-            <span id="connection-status" class="text-xs px-3 py-1 bg-red-950 text-red-400 border border-red-800 rounded">DISCONNECTED</span>
-            <button id="serial-connect-btn" onclick="toggleSerialConnection()" class="px-4 py-1.5 bg-cyber-cyan text-cyber-bg font-bold text-sm rounded hover:bg-cyan-400 transition">
-                CONNECT USB SERIAL
-            </button>
-        </div>
-    </header>
+  <div class="bar"><div class="wrap">
+    <a class="brand" href="index.html">
+      <span class="brand-mark"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>
+      <span class="brand-name">CYBERDECK<span>/s3</span></span>
+    </a>
+    <a class="btn btn-primary" href="app.html">Try it <span class="arrow">&rarr;</span></a>
+  </div></div>
 
-    <div class="flex flex-1 overflow-hidden">
-        <aside class="w-72 bg-cyber-panel border-r border-cyber-border flex flex-col p-4 space-y-4 overflow-y-auto">
-            
-            <!-- Subsystem 01: WiFi -->
-            <div>
-                <button onclick="toggleDropdown('wifi-section', 'wifi-arrow')" class="w-full flex justify-between items-center text-xs text-cyber-cyan uppercase tracking-wider mb-2 px-2 py-1 font-bold hover:bg-cyber-border/20 rounded">
-                    <span>Subsystem 1 | Wifi</span>
-                    <span id="wifi-arrow" class="transform transition-transform duration-200">▼</span>
-                </button>
-                <div id="wifi-section" class="space-y-1 pl-2">
-                    <button onclick="switchModule('1.1')" class="sidebar-btn w-full text-left px-3 py-2 rounded bg-cyber-border/50 text-cyber-cyan border border-cyber-cyan/30 text-xs transition">1.1 Wi-Fi Scan</button>
-                    <button onclick="switchModule('1.2')" class="sidebar-btn w-full text-left px-3 py-2 rounded text-gray-400 hover:bg-cyber-border/30 hover:text-gray-200 text-xs transition">1.2 Wardriving Logger</button>
-                    <button onclick="switchModule('1.3')" class="sidebar-btn w-full text-left px-3 py-2 rounded text-gray-400 hover:bg-cyber-border/30 hover:text-gray-200 text-xs transition">1.3 Promiscuous Sniffer</button>
-                    <button onclick="switchModule('1.4')" class="sidebar-btn w-full text-left px-3 py-2 rounded text-gray-400 hover:bg-cyber-border/30 hover:text-gray-200 text-xs transition">1.4 Network Discovery</button>
-                    <button onclick="switchModule('1.5')" class="sidebar-btn w-full text-left px-3 py-2 rounded text-gray-400 hover:bg-cyber-border/30 hover:text-gray-200 text-xs transition">1.5 AP Hosting</button>
-                    <button onclick="switchModule('1.6')" class="sidebar-btn w-full text-left px-3 py-2 rounded text-gray-400 hover:bg-cyber-border/30 hover:text-gray-200 text-xs transition">1.6 Frame Lab Testing</button>
-                </div>
-            </div>
+  <header class="hero">
+    <div class="deck-wrap" aria-hidden="true">
+      <svg id="deck-board" viewBox="0 0 1200 760" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <filter id="glow" x="-40%" y="-40%" width="180%" height="180%">
+            <feGaussianBlur stdDeviation="3.2" result="b"/>
+            <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+          </filter>
+          <pattern id="silk" width="34" height="34" patternUnits="userSpaceOnUse">
+            <circle cx="2" cy="2" r="1" fill="var(--line2)" opacity="0.5"/>
+          </pattern>
+        </defs>
 
-            <!-- Subsystem 02: BLE -->
-            <div>
-                <button onclick="toggleDropdown('ble-section', 'ble-arrow')" class="w-full flex justify-between items-center text-xs text-cyber-magenta uppercase tracking-wider mb-2 px-2 py-1 font-bold hover:bg-cyber-border/20 rounded">
-                    <span>Subsystems 2 | BLE</span>
-                    <span id="ble-arrow" class="transform transition-transform duration-200 -rotate-90">▼</span>
-                </button>
-                <div id="ble-section" class="space-y-1 pl-2 hidden">
-                    <button onclick="switchModule('2.1')" class="sidebar-btn w-full text-left px-3 py-2 rounded text-gray-400 hover:bg-cyber-border/30 hover:text-gray-200 text-xs transition">2.1 BLE Scan</button>
-                    <button onclick="switchModule('2.2')" class="sidebar-btn w-full text-left px-3 py-2 rounded text-gray-400 hover:bg-cyber-border/30 hover:text-gray-200 text-xs transition">2.2 GATT Services</button>
-                    <button onclick="switchModule('2.3')" class="sidebar-btn w-full text-left px-3 py-2 rounded text-gray-400 hover:bg-cyber-border/30 hover:text-gray-200 text-xs transition">2.3 Advertisement Sniffing</button>
-                    <button onclick="switchModule('2.4')" class="sidebar-btn w-full text-left px-3 py-2 rounded text-gray-400 hover:bg-cyber-border/30 hover:text-gray-200 text-xs transition">2.4 Custom Beacons</button>
-                    <button onclick="switchModule('2.5')" class="sidebar-btn w-full text-left px-3 py-2 rounded text-gray-400 hover:bg-cyber-border/30 hover:text-gray-200 text-xs transition">2.5 GATT Exploration</button>
-                    <button onclick="switchModule('2.6')" class="sidebar-btn w-full text-left px-3 py-2 rounded text-gray-400 hover:bg-cyber-border/30 hover:text-gray-200 text-xs transition">2.6 Device Testing</button>
-                </div>
-            </div>
+        <!-- board substrate -->
+        <rect x="70" y="90" width="1060" height="580" rx="22" fill="var(--panel)" stroke="var(--line)" stroke-width="2"/>
+        <rect x="70" y="90" width="1060" height="580" rx="22" fill="url(#silk)"/>
 
-        </aside>
+        <!-- dim base traces -->
+        <g fill="none" stroke="var(--line2)" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round">
+          <path class="trace-base" d="M600 350 L600 200 L760 200 L760 120 L950 120"/>
+          <path class="trace-base" d="M650 380 L860 380 L930 360 L1080 360"/>
+          <path class="trace-base" d="M650 410 L650 560 L820 560 L900 650"/>
+          <path class="trace-base" d="M550 410 L550 520 L380 520 L300 650"/>
+          <path class="trace-base" d="M550 350 L360 350 L220 350 L130 340"/>
+        </g>
 
-        <main class="flex-1 p-6 overflow-y-auto flex flex-col space-y-6">
-            <div class="bg-cyber-panel border border-cyber-border p-6 rounded-lg flex justify-between items-center shadow-lg">
-                <div>
-                    <h2 id="module-title" class="text-lg font-bold text-cyber-green glow-green">MODULE 1.1: ACTIVE WIFI SCANNER</h2>
-                    <p id="module-desc" class="text-sm text-gray-400 mt-1">Scans local airspace for active BSSIDs, SSIDs, channels, and RSSI metrics.</p>
-                </div>
-                <div class="flex space-x-3">
-                    <button onclick="sendModuleCommand('START')" class="px-5 py-2 bg-cyber-green text-cyber-bg font-bold rounded hover:bg-emerald-400 transition">START MODULE</button>
-                    <button onclick="sendModuleCommand('STOP')" class="px-5 py-2 bg-red-950 text-red-400 border border-red-800 rounded hover:bg-red-900 transition">HALT</button>
-                </div>
-            </div>
+        <!-- bright signal pulses -->
+        <g fill="none" stroke-width="3.4" stroke-linejoin="round" stroke-linecap="round" filter="url(#glow)">
+          <path id="pulse-wifi" d="M600 350 L600 200 L760 200 L760 120 L950 120" stroke-dasharray="26 2600" stroke-dashoffset="2400"/>
+          <path id="pulse-ble"  d="M650 380 L860 380 L930 360 L1080 360" stroke-dasharray="26 2600" stroke-dashoffset="2400"/>
+          <path id="pulse-ir"   d="M650 410 L650 560 L820 560 L900 650" stroke-dasharray="26 2600" stroke-dashoffset="2400"/>
+          <path id="pulse-nrf"  d="M550 410 L550 520 L380 520 L300 650" stroke-dasharray="26 2600" stroke-dashoffset="2400"/>
+          <path id="pulse-nfc"  d="M550 350 L360 350 L220 350 L130 340" stroke-dasharray="26 2600" stroke-dashoffset="2400"/>
+        </g>
 
-            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 flex-1">
-                <div class="lg:col-span-2 bg-cyber-panel border border-cyber-border rounded-lg p-4 flex flex-col">
-                    <h3 class="text-xs text-gray-500 uppercase tracking-wider mb-3">Live Telemetry Feed</h3>
-                    <div class="overflow-x-auto flex-1 border border-cyber-border/50 rounded">
-                        <table class="w-full text-left border-collapse">
-                            <thead>
-                                <tr id="table-headers" class="bg-cyber-border/30 text-xs text-cyber-cyan border-b border-cyber-border">
-                                    <th class="p-3">SSID / Target</th>
-                                    <th class="p-3">MAC / BSSID</th>
-                                    <th class="p-3">CH</th>
-                                    <th class="p-3">RSSI</th>
-                                </tr>
-                            </thead>
-                            <tbody id="telemetry-table-body" class="text-sm divide-y divide-cyber-border/30">
-                                <tr>
-                                    <td colspan="4" class="p-4 text-center text-gray-600">Awaiting hardware telemetry stream...</td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
+        <!-- edge pads + labels -->
+        <g class="pad" font-family="var(--mono)" font-size="13" letter-spacing="1.5">
+          <circle cx="950" cy="120" r="6" fill="var(--wifi)"/><text x="950" y="102" fill="var(--wifi)" text-anchor="middle">WIFI</text>
+          <circle cx="1080" cy="360" r="6" fill="var(--ble)"/><text x="1080" y="342" fill="var(--ble)" text-anchor="middle">BLE</text>
+          <circle cx="900" cy="650" r="6" fill="var(--ir)"/><text x="900" y="676" fill="var(--ir)" text-anchor="middle">IR</text>
+          <circle cx="300" cy="650" r="6" fill="var(--nrf)"/><text x="300" y="676" fill="var(--nrf)" text-anchor="middle">NRF24</text>
+          <circle cx="130" cy="340" r="6" fill="var(--nfc)"/><text x="130" y="322" fill="var(--nfc)" text-anchor="middle">NFC</text>
+        </g>
 
-                <div class="bg-cyber-panel border border-cyber-border rounded-lg p-4 flex flex-col">
-                    <h3 class="text-xs text-gray-500 uppercase tracking-wider mb-3">Hardware Serial Stream</h3>
-                    <div id="serial-console" class="flex-1 bg-cyber-bg border border-cyber-border/50 rounded p-3 font-mono text-xs text-green-400 overflow-y-auto space-y-1 max-h-[300px] lg:max-h-none">
-                        <div>[system] Initialized dashboard interface. Connect USB serial to begin.</div>
-                    </div>
-                </div>
-            </div>
-        </main>
+        <!-- antenna meander + radio rings -->
+        <path class="pad" d="M950 120 L950 95 L930 95 L930 75 L950 75 L950 55 L930 55" fill="none" stroke="var(--wifi)" stroke-width="2.5"/>
+        <g id="antenna-rings" fill="none" stroke="var(--wifi)" stroke-width="2">
+          <circle cx="940" cy="65" r="4" opacity="0"/><circle cx="940" cy="65" r="4" opacity="0"/><circle cx="940" cy="65" r="4" opacity="0"/>
+        </g>
+
+        <!-- USB-C on the left edge -->
+        <rect class="usb" x="40" y="352" width="44" height="56" rx="10" fill="var(--panel2)" stroke="var(--line2)" stroke-width="2"/>
+        <rect class="usb" x="52" y="368" width="20" height="24" rx="6" fill="var(--bg)"/>
+
+        <!-- ESP32-S3 shielded module -->
+        <g class="chip">
+          <rect x="516" y="316" width="168" height="118" rx="12" fill="var(--panel2)" stroke="var(--line2)" stroke-width="2"/>
+          <g stroke="var(--line)" stroke-width="1.5" opacity="0.7">
+            <line x1="528" y1="330" x2="672" y2="330"/><line x1="528" y1="348" x2="672" y2="348"/>
+            <line x1="528" y1="366" x2="672" y2="366"/><line x1="528" y1="384" x2="672" y2="384"/>
+            <line x1="528" y1="402" x2="672" y2="402"/><line x1="528" y1="420" x2="672" y2="420"/>
+          </g>
+          <rect x="556" y="356" width="88" height="38" rx="4" fill="var(--bg)" stroke="var(--line2)"/>
+          <text x="600" y="380" fill="var(--mute)" font-family="var(--mono)" font-size="14" text-anchor="middle" letter-spacing="1">ESP32-S3</text>
+          <circle id="power-led" cx="672" cy="330" r="5" fill="var(--ok)"/>
+        </g>
+
+        <!-- header pins along top and bottom -->
+        <g class="pin" fill="var(--bg)" stroke="var(--line2)" stroke-width="1.5">
+          <circle cx="210" cy="140" r="6"/><circle cx="240" cy="140" r="6"/><circle cx="270" cy="140" r="6"/><circle cx="300" cy="140" r="6"/><circle cx="330" cy="140" r="6"/><circle cx="360" cy="140" r="6"/>
+          <circle cx="840" cy="620" r="6"/><circle cx="870" cy="620" r="6"/><circle cx="900" cy="620" r="6" opacity="0.001"/>
+          <circle cx="210" cy="600" r="6"/><circle cx="240" cy="600" r="6"/><circle cx="270" cy="600" r="6"/>
+        </g>
+      </svg>
+      <div class="veil"></div>
     </div>
+    <div class="wrap">
+      <p class="eyebrow">ESP32-S3 · multi-protocol field deck</p>
+      <h1>
+        <span class="word">Every</span> <span class="word">signal</span>
+        <span class="word">on</span> <span class="word">one</span>
+        <span class="word"><em>bench.</em></span>
+      </h1>
+      <p class="lede">A pocket-size deck that listens across Wi-Fi, Bluetooth, 2.4&nbsp;GHz, NFC and infrared — and reports every reading straight to your browser.</p>
+      <div class="cta">
+        <a class="btn btn-primary" href="app.html">Open the dashboard <span class="arrow">&rarr;</span></a>
+        <a class="btn" href="#facts">What it does</a>
+      </div>
+      <div class="spec">
+        <span><b>ESP32-S3</b> N16R8</span>
+        <span><b>5</b> subsystems</span>
+        <span><b>115200</b> baud serial</span>
+        <span><b>~&#8377;3,330</b> build</span>
+      </div>
+    </div>
+  </header>
 
-    <script>
-        let port;
-        let reader;
-        let inputDone;
-        let currentModule = "1.1";
+  <div class="strip"><div class="wrap">
+    <div class="stat"><div class="n" data-to="24">24</div><div class="l">Live modules, one firmware</div></div>
+    <div class="stat"><div class="n" data-to="5">5</div><div class="l">Radio &amp; optical subsystems</div></div>
+    <div class="stat"><div class="n" data-to="6">6</div><div class="l">Infrared tools, scope-tested</div></div>
+    <div class="stat"><div class="n" data-to="1">1</div><div class="l">USB cable to run it all</div></div>
+  </div></div>
 
-        function toggleDropdown(sectionId, arrowId) {
-            const section = document.getElementById(sectionId);
-            const arrow = document.getElementById(arrowId);
-            section.classList.toggle('hidden');
-            if (section.classList.contains('hidden')) {
-                arrow.classList.remove('rotate-0');
-                arrow.classList.add('-rotate-90');
-            } else {
-                arrow.classList.remove('-rotate-90');
-                arrow.classList.add('rotate-0');
-            }
-        }
+  <section class="facts wrap" id="facts">
+    <div class="head">
+      <p class="eyebrow">The subsystems</p>
+      <h2>One state machine, five ways to read the room.</h2>
+    </div>
+    <div class="grid">
+      <article class="card c-wifi reveal"><span class="bar-line"></span><div class="k">01 · Wi-Fi</div><h3>802.11 recon</h3><p>Scan airspace, log access points and walk raw management frames in promiscuous mode.</p></article>
+      <article class="card c-ble reveal"><span class="bar-line"></span><div class="k">02 · BLE</div><h3>Bluetooth LE</h3><p>Enumerate GATT services, read live characteristic values and verify custom beacons.</p></article>
+      <article class="card c-ir reveal"><span class="bar-line"></span><div class="k">07 · Infrared</div><h3>38&nbsp;kHz optical</h3><p>Learn a remote's mark/space timing, decode NEC &amp; Sony, then replay it back. Tomorrow's demo.</p></article>
+      <article class="card c-nrf reveal"><span class="bar-line"></span><div class="k">04 · nRF24</div><h3>2.4&nbsp;GHz</h3><p>Sweep the band and watch for low-power transceiver traffic. Hardware stage, coming online.</p></article>
+      <article class="card c-nfc reveal"><span class="bar-line"></span><div class="k">05 · NFC</div><h3>13.56&nbsp;MHz</h3><p>Read ISO&nbsp;14443A tags and dump card memory with the PN532. Hardware stage.</p></article>
+      <article class="card reveal"><span class="bar-line"></span><div class="k">The point</div><h3>It all lands here</h3><p>Connect over USB serial and every module streams its telemetry into one live dashboard.</p></article>
+    </div>
+  </section>
 
-        async function toggleSerialConnection() {
-            if (port) {
-                await disconnectSerial();
-            } else {
-                await connectSerial();
-            }
-        }
+  <footer><div class="wrap">
+    <span>Cyberdeck ESP32-S3 · field security &amp; diagnostics</span>
+    <a class="btn" href="app.html">Open the dashboard <span class="arrow">&rarr;</span></a>
+  </div></footer>
 
-        async function connectSerial() {
-            try {
-                port = await navigator.serial.requestPort();
-                await port.open({ baudRate: 115200 });
+  <script src="assets/vendor/anime.min.js"></script>
+  <script src="assets/js/board.js"></script>
+  <script>
+    document.documentElement.classList.add("js");
+    const rm = matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-                document.getElementById('connection-status').innerText = "CONNECTED (115200)";
-                document.getElementById('connection-status').className = "text-xs px-3 py-1 bg-emerald-950 text-emerald-400 border border-emerald-800 rounded";
-                document.getElementById('serial-connect-btn').innerText = "DISCONNECT";
-                document.getElementById('serial-connect-btn').className = "px-4 py-1.5 bg-red-950 text-red-400 border border-red-800 font-bold text-sm rounded hover:bg-red-900 transition";
+    function showReveals() { document.querySelectorAll(".reveal").forEach(el => el.classList.remove("reveal")); }
 
-                appendLog("[system] USB Serial port opened successfully.");
-                readLoop();
-            } catch (err) {
-                console.error("Serial connection error:", err);
-                appendLog("[-] Failed to open serial port: " + err);
-            }
-        }
+    if (!rm && window.anime) {
+      anime.timeline({ easing: "easeOutExpo", delay: 300 })
+        .add({ targets: ".hero .word", translateY: [40, 0], opacity: [0, 1], duration: 900, delay: anime.stagger(80) })
+        .add({ targets: ".lede, .cta, .spec", translateY: [20, 0], opacity: [0, 1], duration: 700, delay: anime.stagger(90) }, "-=500");
 
-        async function disconnectSerial() {
-            if (reader) {
-                await reader.cancel();
-                await inputDone.catch(() => {});
-            }
-            if (port) {
-                await port.close();
-                port = null;
-            }
-            document.getElementById('connection-status').innerText = "DISCONNECTED";
-            document.getElementById('connection-status').className = "text-xs px-3 py-1 bg-red-950 text-red-400 border border-red-800 rounded";
-            document.getElementById('serial-connect-btn').innerText = "CONNECT USB SERIAL";
-            document.getElementById('serial-connect-btn').className = "px-4 py-1.5 bg-cyber-cyan text-cyber-bg font-bold text-sm rounded hover:bg-cyan-400 transition";
-            appendLog("[system] Serial port closed.");
-        }
+      document.querySelectorAll(".stat .n").forEach(el => {
+        const obj = { v: 0 }, to = +el.dataset.to; el.textContent = "0";
+        new IntersectionObserver((en, ob) => en.forEach(x => {
+          if (x.isIntersecting) { anime({ targets: obj, v: to, round: 1, duration: 1300, easing: "easeOutExpo", update: () => el.textContent = obj.v }); ob.disconnect(); }
+        })).observe(el);
+      });
 
-        async function readLoop() {
-            const textDecoder = new TextDecoderStream();
-            inputDone = port.readable.pipeTo(textDecoder.writable);
-            reader = textDecoder.readable.getReader();
-
-            try {
-                while (true) {
-                    const { value, done } = await reader.read();
-                    if (done) break;
-                    if (value) {
-                        handleIncomingText(value);
-                    }
-                }
-            } catch (error) {
-                appendLog("[-] Stream read error: " + error);
-            }
-        }
-
-        let lineBuffer = "";
-        function handleIncomingText(text) {
-            lineBuffer += text;
-            let lines = lineBuffer.split("\n");
-            lineBuffer = lines.pop();
-
-            for (let line of lines) {
-                line = line.trim();
-                if (!line) continue;
-                appendLog(line);
-
-                if (line.startsWith("{") && line.endsWith("}")) {
-                    try {
-                        let data = JSON.parse(line);
-                        updateTelemetryTable(data);
-                    } catch (e) {}
-                }
-            }
-        }
-
-        async function sendModuleCommand(action) {
-            if (!port || !port.writable) {
-                alert("Please connect your ESP32 via USB Serial first!");
-                return;
-            }
-            const command = JSON.stringify({ module: currentModule, action: action }) + "\n";
-            const encoder = new TextEncoder();
-            const writer = port.writable.getWriter();
-            await writer.write(encoder.encode(command));
-            writer.releaseLock();
-            appendLog("[sent] " + command.trim());
-        }
-
-        function appendLog(message) {
-            const consoleBox = document.getElementById('serial-console');
-            const div = document.createElement('div');
-            div.textContent = message;
-            consoleBox.appendChild(div);
-            consoleBox.scrollTop = consoleBox.scrollHeight;
-        }
-
-        function updateTelemetryTable(data) {
-            const tbody = document.getElementById('telemetry-table-body');
-            if (tbody.innerHTML.includes("Awaiting hardware telemetry")) {
-                tbody.innerHTML = "";
-            }
-            const tr = document.createElement('tr');
-            tr.className = "hover:bg-cyber-border/20 border-b border-cyber-border/30";
-
-            // Format table dynamically based on active module category
-            if (currentModule.startsWith("1.")) {
-                tr.innerHTML = `
-                    <td class="p-3 font-bold text-cyber-cyan">${data.ssid || 'Hidden'}</td>
-                    <td class="p-3 text-gray-400">${data.bssid || 'N/A'}</td>
-                    <td class="p-3 text-gray-300">${data.ch || '-'}</td>
-                    <td class="p-3 text-cyber-yellow">${data.rssi || '-'} dBm</td>
-                `;
-            } else {
-                // BLE modules telemetry rendering
-                tr.innerHTML = `
-                    <td class="p-3 font-bold text-cyber-magenta">${data.name || data.addr || 'BLE Device'}</td>
-                    <td class="p-3 text-gray-400 text-xs">${data.uuid || data.service || 'N/A'}</td>
-                    <td class="p-3 text-gray-300">${data.rssi ? data.rssi + ' dBm' : (data.canRead !== undefined ? (data.canRead ? 'READ' : 'LOCKED') : '-')}</td>
-                    <td class="p-3 text-cyber-cyan text-xs truncate max-w-[150px]">${data.value_hex || data.payload || data.status || 'Active'}</td>
-                `;
-            }
-            tbody.insertBefore(tr, tbody.firstChild);
-        }
-
-        function switchModule(modId) {
-            currentModule = modId;
-            document.querySelectorAll('.sidebar-btn').forEach(btn => {
-                btn.className = "sidebar-btn w-full text-left px-3 py-2 rounded text-gray-400 hover:bg-cyber-border/30 hover:text-gray-200 text-xs transition";
-            });
-            event.currentTarget.className = "sidebar-btn w-full text-left px-3 py-2 rounded bg-cyber-border/50 text-cyber-cyan border border-cyber-cyan/30 text-xs transition";
-            
-            const titles = {
-                '1.1': 'MODULE 1.1: ACTIVE WIFI SCANNER',
-                '1.2': 'MODULE 1.2: WARDRIVING LOGGER',
-                '1.3': 'MODULE 1.3: PROMISCUOUS SNIFFER',
-                '1.4': 'MODULE 1.4: NETWORK DISCOVERY',
-                '1.5': 'MODULE 1.5: AP HOSTING',
-                '1.6': 'MODULE 1.6: FRAME LAB TESTING',
-                '2.1': 'MODULE 2.1: BLE SCAN & FINGERPRINTING',
-                '2.2': 'MODULE 2.2: GATT SERVICE ENUMERATION',
-                '2.3': 'MODULE 2.3: ADVERTISEMENT SNIFFER',
-                '2.4': 'MODULE 2.4: CUSTOM BEACON SPAMMER',
-                '2.5': 'MODULE 2.5: GATT EXPLORATION & VALUE READER',
-                '2.6': 'MODULE 2.6: BLE DEVICE STRESS TESTING'
-            };
-            const descs = {
-                '1.1': 'Scans local airspace for active BSSIDs, SSIDs, channels, and RSSI metrics.',
-                '1.2': 'Logs mobile access points and geolocation telemetry data.',
-                '1.3': 'Captures raw 802.11 management and data frames in promiscuous mode.',
-                '1.4': 'Discovers connected clients and active hosts on the target network.',
-                '1.5': 'Hosts an administrative Access Point for localized web control.',
-                '1.6': 'Injects custom test frames and verifies injection success rates.',
-                '2.1': 'Discovers nearby BLE peripherals, MAC addresses, RSSI, and mfg data.',
-                '2.2': 'Enumerates GATT services, characteristic UUIDs, and permission flags.',
-                '2.3': 'Intercepts raw low-level advertisement payloads and hex packets.',
-                '2.4': 'Broadcasts custom beacon frames for range and scanner verification.',
-                '2.5': 'Connects to devices, inspects characteristics, and dumps live hex values.',
-                '2.6': 'Measures connection handshake latencies and stress-tests targets.'
-            };
-
-            // Update dynamic table column headers based on module group
-            const headerRow = document.getElementById('table-headers');
-            if (modId.startsWith("1.")) {
-                headerRow.innerHTML = `
-                    <th class="p-3">SSID / Target</th>
-                    <th class="p-3">MAC / BSSID</th>
-                    <th class="p-3">CH</th>
-                    <th class="p-3">RSSI</th>
-                `;
-            } else {
-                headerRow.innerHTML = `
-                    <th class="p-3">Target / Name</th>
-                    <th class="p-3">UUID / Addr</th>
-                    <th class="p-3">State / RSSI</th>
-                    <th class="p-3">Payload / Status</th>
-                `;
-            }
-
-            document.getElementById('module-title').innerText = titles[modId];
-            document.getElementById('module-desc').innerText = descs[modId];
-            document.getElementById('telemetry-table-body').innerHTML = `<tr><td colspan="4" class="p-4 text-center text-gray-600">Awaiting hardware telemetry stream...</td></tr>`;
-            appendLog(`[system] Switched active context to Module ${modId}`);
-        }
-    </script>
+      const co = new IntersectionObserver((en) => en.forEach(x => {
+        if (x.isIntersecting) { anime({ targets: x.target, translateY: [26, 0], opacity: [0, 1], duration: 700, easing: "easeOutCubic" }); x.target.classList.remove("reveal"); co.unobserve(x.target); }
+      }), { threshold: .2 });
+      document.querySelectorAll(".reveal").forEach(c => co.observe(c));
+    } else {
+      showReveals();
+    }
+  </script>
 </body>
 </html>
