@@ -79,7 +79,7 @@ cyberdeck-esp32s3/
 │   ├── app.html                The dashboard itself (sidebar, telemetry table, serial console)
 │   └── assets/
 │       ├── css/                base.css (design tokens) · welcome.css · dashboard.css
-│       ├── js/                 board.js (hero animation) · dashboard.js (Web Serial + modules) · resize.js (draggable panes)
+│       ├── js/                 board.js (hero animation) · dashboard.js (Web Serial + modules)
 │       └── vendor/             anime.min.js (vendored; do not fetch from a CDN)
 ├── firmware/
 │   ├── unified_firmware/       ⭐ THE firmware to flash — every module in one JSON loop
@@ -148,6 +148,8 @@ If you add modules, keep this rule: no unbounded `delay()` / `while()` in
 - **IRremoteESP8266** (David Conran / crankyoldgit) — only for IR decode/replay
   (7.3 / 7.4), but the sketch includes its headers, so it must be installed to
   compile.
+- **RF24** (TMRh20) — for the 2.4 GHz nRF24 modules (4.x). The sketch includes
+  its headers, so it must be installed to compile.
 - ESP32 BLE + Wi-Fi come with the ESP32 Arduino core.
 
 Target board: **ESP32-S3** (dev notes assume N16R8 / N8R8 octal-PSRAM).
@@ -197,9 +199,26 @@ minus → GND**.
 tears down the previous one first, so the LEDC channel is always detached before
 `IRsend`/`digitalWrite` take the TX pin back.
 
+### Subsystem 4 · nRF24 (2.4 GHz) — 🧪 firmware + dashboard, HARDWARE UNTESTED
+nRF24L01+ on SPI: `CE=6 CSN=7 SCK=12 MISO=13 MOSI=11`. Lazy init via
+`ensureNrf()`, which runs `radio.begin()` + `radio.isChipConnected()` and emits
+`{"status":"error","data":{"msg":"nrf_not_found"}}` if the module is missing —
+so 4.1 doubles as the wiring check.
+
+| id | name | what it does | emits (`data`) |
+|----|------|--------------|----------------|
+| 4.1 | Spectrum scan | sweeps channels 0–125 (2400–2525 MHz), 32 RPD samples/channel/pass | `ch, mhz, level` (0–32) |
+| 4.2 | Packet sniffer | listens on the default pipe, hops ch 0–83, dumps payloads as hex | `ch, addr, len, payload` |
+| 4.3 | Address discovery | 2-byte preamble sniff, hops the band, reports candidate pipe addresses | `ch, addr, hits` |
+| 4.4 | Protocol analysis | per-packet length + data rate + heuristic control/data guess | `ch, addr, len, rate, guess` |
+| 4.5 | Packet storage | in-RAM ring buffer (32 frames) of captures, running count | `stored, last_addr, last` |
+| 4.6 | Lab transmitter | low-power test TX to your own node (link/range test) | `ch, addr, sent, ack` |
+
+Only one module active at a time; `stopModule()` powers the radio down. 4.6 is a
+self-test transmitter for a node you own — not for injecting into other devices.
+Each standalone sketch also lives under `firmware/04_2.4ghz_nrf24/4.x_*/`.
+
 ### Not implemented yet (folders exist, logic does not)
-- **Subsystem 4 · nRF24L01+** (4.1–4.6): 2.4 GHz spectrum scan, packet sniffing,
-  address discovery, protocol analysis, packet storage, lab transmitter.
 - **Subsystem 5 · PN532 NFC** (5.1–5.6): ISO 14443A detect/read, memory
   structure, NDEF read/write, dump storage, card emulation.
 - **M5StickC Plus2 command terminal** firmware (screen UI, buttons, IR blaster,
@@ -221,13 +240,6 @@ user's own machine — nothing is sent to any server.
 - `app.html` — the dashboard: collapsible subsystem sidebar, a live telemetry
   table, and a raw serial console. "Connect USB serial" → pick a module → "Start
   module" / "Halt".
-- `assets/js/resize.js` — standalone pane resizing. Two `.resizer` handles in
-  `app.html` (sidebar↔main, telemetry↔serial) set `.sidebar` width and
-  `.panel-serial` height inline. A pane being enlarged is capped at **75%** of
-  its container along that axis; re-clamped on window resize; sizes persist in
-  `localStorage` (`cyberdeck.panes`); double-click / Enter resets; arrow keys
-  nudge. The column handle is hidden ≤820px (sidebar stacks). Doesn't touch
-  `dashboard.js`.
 - `assets/js/dashboard.js` — the Web Serial bridge and all module metadata. Key
   objects to edit when adding a module:
   - `TITLES` / `DESCS` — the module title + description text.
@@ -315,9 +327,10 @@ redesigned (Blueprint) and deployed to GitHub Pages; README refreshed.
 receiver/transmitter and a remote). Wiring: RX S→GPIO4, middle→3.3 V, minus→GND;
 TX LED on GPIO5.
 
-**Next up (not started):**
-- Implement nRF24 (subsystem 4) in firmware + dashboard, using the reserved SPI
-  pins (`CE=6 CSN=7 SCK=12 MISO=13 MOSI=11`).
+**Next up:**
+- nRF24 (subsystem 4): all six modules (4.1–4.6) are implemented in the unified
+  firmware + dashboard and as standalone sketches (hardware-untested, SPI `CE=6
+  CSN=7 SCK=12 MISO=13 MOSI=11`). Needs flashing + an nRF24L01+ to verify.
 - Implement PN532 NFC (subsystem 5) in firmware + dashboard, using I2C
   (`SDA=8 SCL=9`).
 - Build the M5StickC Plus2 command-terminal firmware (screen UI + ESP-NOW/UART
