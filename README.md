@@ -1,83 +1,92 @@
-# Cyberdeck: ESP32-S3 Multi-Protocol Field Security & Diagnostic Platform
+<p align="center">
+  <img src="docs/images/banner.svg" alt="Cyberdeck ESP32-S3: six signal lines pulsing out of the chip" width="100%">
+</p>
 
-A compact, low-cost (~₹3,330), open-source hardware cyberdeck built on the ESP32-S3 microcontroller. Designed for portable wireless protocol auditing, diagnostic signal analysis, and field packet capture across standard short-range and sub-gigahertz RF spectra.
+<h1 align="center">Cyberdeck · ESP32-S3</h1>
 
-## Key Hardware Specifications
+<p align="center">
+  A pocket-size, open-source field deck for wireless and physical security auditing.<br>
+  One ESP32-S3 listens across Wi-Fi, Bluetooth, 2.4&nbsp;GHz, NFC and infrared, and streams every reading to a live browser dashboard.
+</p>
 
-* **Core Processor:** ESP32-S3 Dual-Core Xtensa LX7 (N16R8)
-* **Display & Control:** 2.8" SPI TFT Display (ILI9341) with D-Pad / Rotary Encoder
-* **Wireless Subsystems:**
-  * **2.4 GHz:** Native Wi-Fi (802.11 b/g/n) + BLE 5.0 + nRF24L01+ Transceiver
-  * **Sub-GHz:** CC1101 Transceiver (315 / 433 / 868 / 915 MHz)
-  * **RFID / NFC:** PN532 (13.56 MHz High-Frequency) + RDM6300 (125 kHz Low-Frequency)
-  * **Optical:** 38 kHz Infrared Receiver & Transmitter Pair
-* **Storage & Power:** MicroSD SPI Module (pcap logging) + TP4056 LiPo Charging System
+<p align="center">
+  <a href="https://rronium.github.io/cyberdeck-esp32s3/"><img alt="Live dashboard" src="https://img.shields.io/badge/live%20dashboard-rronium.github.io-58c6ff?style=for-the-badge&labelColor=060b16"></a>
+  <img alt="ESP32-S3" src="https://img.shields.io/badge/ESP32--S3-N16R8-a9b8ff?style=for-the-badge&labelColor=060b16">
+  <img alt="Web Serial" src="https://img.shields.io/badge/Web%20Serial-115200-8ef0d0?style=for-the-badge&labelColor=060b16">
+</p>
 
 ---
 
-## Repository Structure
+## Live dashboard
+
+**👉 [rronium.github.io/cyberdeck-esp32s3](https://rronium.github.io/cyberdeck-esp32s3/)**
+
+The welcome page introduces the deck; **Try it** opens the dashboard. Plug the ESP32-S3 into your computer over USB, click **Connect USB serial**, pick a module and press **Start module**.
+
+> Web Serial only works in desktop **Chrome** or **Edge**. The page talks to the board plugged into *your* computer; nothing is sent to a server.
+
+Every push to `main` that touches `dashboard/` redeploys the site through GitHub Actions ([`.github/workflows/pages.yml`](.github/workflows/pages.yml)).
+
+## How it fits together
+
+```mermaid
+flowchart LR
+    subgraph Deck["ESP32-S3 core (unified firmware)"]
+        WIFI["01 · Wi-Fi"]
+        BLE["02 · BLE"]
+        NRF["04 · nRF24L01+"]
+        NFC["05 · PN532 NFC"]
+        IR["07 · Infrared"]
+    end
+    Deck -- "USB serial · JSON @ 115200" --> DASH["Browser dashboard<br/>(Web Serial)"]
+    Deck -- "UART / ESP-NOW" --> M5["M5StickC Plus2<br/>command terminal"]
+```
+
+The browser sends `{"module": "7.4", "action": "START"}` and the board answers with lines like `{"module": "7.4", "status": "ok", "data": {...}}`.
+
+## Subsystems
+
+| | Subsystem | Hardware | Status |
+|---|---|---|---|
+| 01 | **Wi-Fi**: scan, wardriving log, promiscuous capture, network discovery, AP hosting, frame lab | ESP32-S3 radio | ✅ Firmware + dashboard |
+| 02 | **BLE**: scan, GATT services, advertisement capture, custom beacons, GATT explorer, device testing | ESP32-S3 radio | ✅ Firmware + dashboard |
+| 07 | **Infrared**: 38&nbsp;kHz carrier, pulse learning, replay, protocol decode, signal analysis, LED test | 38&nbsp;kHz IR pair (RX GPIO4, TX GPIO5) | 🧪 Firmware + dashboard, hardware testing in progress |
+| 04 | **nRF24**: 2.4&nbsp;GHz spectrum and packet analysis | nRF24L01+ | ⏳ Planned |
+| 05 | **NFC**: ISO&nbsp;14443A read, NDEF, dumps | PN532 (13.56&nbsp;MHz) | ⏳ Planned |
+| — | **Command terminal**: handheld UI and IR blaster | M5StickC Plus2 | ⏳ Planned |
+
+The CC1101 sub-GHz and RDM6300 125&nbsp;kHz modules from the original plan are out of scope for this hardware revision.
+
+## Repository layout
 
 ```text
 cyberdeck-esp32s3/
-├── README.md
-├── docs/
-│   ├── schematics.pdf
-│   ├── pinout_matrix.md
-│   └── presentation_deck.pdf
-├── hardware/
-│   ├── cad/
-│   └── pcb_layout/
-├── data_dumps/
-│   ├── pcap_captures/
-│   └── rfid_dumps/
-└── firmware/
-    ├── 01_wifi/
-    │   ├── 1.1_wifi_scan/
-    │   ├── 1.2_wardriving/
-    │   ├── 1.3_promiscuous_sniffing/
-    │   ├── 1.4_network_discovery/
-    │   ├── 1.5_ap_hosting/
-    │   └── 1.6_frame_lab_testing/
-    ├── 02_ble/
-    │   ├── 2.1_ble_scan/
-    │   ├── 2.2_ble_services/
-    │   ├── 2.3_ble_sniffing/
-    │   ├── 2.4_custom_beacons/
-    │   ├── 2.5_gatt_exploration/
-    │   └── 2.6_ble_device_testing/
-    ├── 03_subghz_cc1101/
-    │   ├── 3.1_rssi_detection/
-    │   ├── 3.2_signal_scan/
-    │   ├── 3.3_raw_ook_fsk_capture/
-    │   ├── 3.4_signal_replay/
-    │   ├── 3.5_protocol_decoding/
-    │   └── 3.6_subghz_transmit/
-    ├── 04_2.4ghz_nrf24/
-    │   ├── 4.1_spectrum_scan/
-    │   ├── 4.2_packet_sniffing/
-    │   ├── 4.3_address_discovery/
-    │   ├── 4.4_protocol_analysis/
-    │   ├── 4.5_packet_storage/
-    │   └── 4.6_lab_transmitter/
-    ├── 05_nfc_pn532/
-    │   ├── 5.1_nfc_detection/
-    │   ├── 5.2_iso14443_read/
-    │   ├── 5.3_memory_structure/
-    │   ├── 5.4_ndef_rw/
-    │   ├── 5.5_dump_storage/
-    │   └── 5.6_card_emulation/
-    ├── 06_lf_rfid_rdm6300/
-    │   ├── 6.1_carrier_modulation/
-    │   ├── 6.2_tag_read/
-    │   ├── 6.3_em4100_decoding/
-    │   ├── 6.4_signature_storage/
-    │   ├── 6.5_t5577_write/
-    │   └── 6.6_coil_emulation/
-    ├── 07_infrared/
-    │   ├── 7.1_38khz_modulation/
-    │   ├── 7.2_pulse_learning/
-    │   ├── 7.3_signal_replay/
-    │   ├── 7.4_protocol_libraries/
-    │   ├── 7.5_signal_analysis/
-    │   └── 7.6_led_circuit_tests/
-    └── 00_integrated_cyberdeck_os/
+├── dashboard/                  Browser UI, deployed to GitHub Pages
+│   ├── index.html              Welcome page (animated board hero)
+│   ├── app.html                Dashboard: modules, telemetry table, serial console
+│   └── assets/
+│       ├── css/                base.css (design tokens) · welcome.css · dashboard.css
+│       ├── js/                 board.js (hero animation) · dashboard.js (Web Serial + modules)
+│       └── vendor/             anime.min.js
+├── firmware/
+│   ├── unified_firmware/       ⭐ The firmware to flash: every module behind one JSON command loop
+│   ├── 01_wifi/  02_ble/       Standalone sketches, one folder per module (1.1–1.6, 2.1–2.6)
+│   ├── 04_2.4ghz_nrf24/        nRF24 modules 4.1–4.6 (planned)
+│   ├── 05_nfc_pn532/           PN532 modules 5.1–5.6 (planned)
+│   ├── 07_infrared/            Standalone IR sketches 7.1–7.6
+│   └── 00_integrated_cyberdeck_os/
+├── hardware/                   3d-models/ · schematics/
+├── docs/                       Documentation and README images
+├── data_dumps/                 pcap_captures/ · rfid_dumps/
+└── .github/workflows/          pages.yml: deploys dashboard/ to GitHub Pages
+```
+
+## Quick start
+
+1. Open `firmware/unified_firmware/unified_firmware.ino` in the Arduino IDE, select your ESP32-S3 board and flash it.
+2. Open the [live dashboard](https://rronium.github.io/cyberdeck-esp32s3/) in Chrome or Edge, or open `dashboard/index.html` locally.
+3. Click **Try it → Connect USB serial**, choose the board's port, pick a module from the sidebar and press **Start module**.
+
+---
+
+<p align="center"><sub>Built for learning and authorized testing only. Only audit networks and devices you own or have permission to test.</sub></p>
