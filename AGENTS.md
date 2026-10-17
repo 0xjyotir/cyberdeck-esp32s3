@@ -148,6 +148,8 @@ If you add modules, keep this rule: no unbounded `delay()` / `while()` in
 - **IRremoteESP8266** (David Conran / crankyoldgit) — only for IR decode/replay
   (7.3 / 7.4), but the sketch includes its headers, so it must be installed to
   compile.
+- **Adafruit PN532** + **Adafruit BusIO** — for the PN532 NFC modules (5.x).
+  The sketch includes `<Adafruit_PN532.h>`, so both must be installed to compile.
 - **RF24** (TMRh20) — for the 2.4 GHz nRF24 modules (4.x). The sketch includes
   its headers, so it must be installed to compile.
 - ESP32 BLE + Wi-Fi come with the ESP32 Arduino core.
@@ -218,9 +220,29 @@ Only one module active at a time; `stopModule()` powers the radio down. 4.6 is a
 self-test transmitter for a node you own — not for injecting into other devices.
 Each standalone sketch also lives under `firmware/04_2.4ghz_nrf24/4.x_*/`.
 
+### Subsystem 5 · PN532 NFC — 🧪 firmware + dashboard, HARDWARE UNTESTED
+PN532 on I2C: `SDA=8 SCL=9` (wire the breakout in I2C mode; RSTPDN→3.3 V). Lazy
+init via `ensurePn532()` (`Wire.begin(8,9)` + `nfc.begin()` +
+`getFirmwareVersion()`), which emits `{"status":"error","data":{"msg":"pn532_not_found"}}`
+if the reader is missing — so 5.1 doubles as the wiring check. Full-card reads
+(5.2/5.5) walk **one block/page per `loop()` pass** to stay non-blocking, and
+re-select the card after a MIFARE Classic auth failure.
+
+| id | name | what it does | emits (`data`) |
+|----|------|--------------|----------------|
+| 5.1 | Tag detection | polls for ISO 14443A tags, reports UID on arrival/removal | `uid, uid_len, type` |
+| 5.2 | Block read | walks the card block-by-block (Classic default key A / UL pages) | `block, data, ok` |
+| 5.3 | Memory structure | identifies card family + layout | `uid, type, sectors, blocks, bytes` |
+| 5.4 | NDEF read | reads + decodes the first NDEF record (Text/URI); read-only | `action, record, tnf, type, payload` |
+| 5.5 | Dump storage | block-by-block dump with a running captured count | `stored, block, data` |
+| 5.6 | Card emulation | PN532 target mode, fixed demo identity (never a cloned card) | `uid, mode, status` |
+
+5.4 is read-only in the unified firmware; NDEF **writing** stays a compile-time
+option (`NDEF_WRITE`) only in the standalone sketch, so a START command over USB
+can never overwrite a tag. 5.6 presents a fixed demo UID as a self-test. Each
+standalone sketch also lives under `firmware/05_nfc_pn532/5.x_*/`.
+
 ### Not implemented yet (folders exist, logic does not)
-- **Subsystem 5 · PN532 NFC** (5.1–5.6): ISO 14443A detect/read, memory
-  structure, NDEF read/write, dump storage, card emulation.
 - **M5StickC Plus2 command terminal** firmware (screen UI, buttons, IR blaster,
   ESP-NOW telemetry render).
 - **CC1101 sub-GHz** and **RDM6300 125 kHz RFID** are **out of scope** for this
@@ -353,8 +375,10 @@ TX LED on GPIO5.
 - nRF24 (subsystem 4): all six modules (4.1–4.6) are implemented in the unified
   firmware + dashboard and as standalone sketches (hardware-untested, SPI `CE=6
   CSN=7 SCK=12 MISO=13 MOSI=11`). Needs flashing + an nRF24L01+ to verify.
-- Implement PN532 NFC (subsystem 5) in firmware + dashboard, using I2C
-  (`SDA=8 SCL=9`).
+- PN532 NFC (subsystem 5): all six modules (5.1–5.6) are implemented in the
+  unified firmware + dashboard and as standalone sketches (hardware-untested,
+  I2C `SDA=8 SCL=9`). Needs flashing + a PN532 (plus the Adafruit PN532 / BusIO
+  libraries) and a tag to verify.
 - Build the M5StickC Plus2 command-terminal firmware (screen UI + ESP-NOW/UART
   link to the core).
 

@@ -54,7 +54,7 @@ The browser sends `{"module": "7.4", "action": "START"}` and the board answers w
 | 02 | **BLE**: scan, GATT services, advertisement capture, custom beacons, GATT explorer, device testing | ESP32-S3 radio | ✅ Firmware + dashboard |
 | 07 | **Infrared**: 38&nbsp;kHz carrier, pulse learning, replay, protocol decode, signal analysis, LED test | 38&nbsp;kHz IR pair (RX GPIO4, TX GPIO5) | 🧪 Firmware + dashboard, hardware testing in progress |
 | 04 | **nRF24**: spectrum scan, packet sniffer, address discovery, protocol analysis, packet storage, lab transmitter (4.1–4.6) | nRF24L01+ (SPI: CE&nbsp;6, CSN&nbsp;7, SCK&nbsp;12, MISO&nbsp;13, MOSI&nbsp;11) | 🧪 Firmware + dashboard, hardware untested |
-| 05 | **NFC**: ISO&nbsp;14443A read, NDEF, dumps | PN532 (13.56&nbsp;MHz) | ⏳ Planned |
+| 05 | **NFC**: tag detection, ISO&nbsp;14443A block read, memory structure, NDEF read, dump storage, card emulation (5.1–5.6) | PN532 (I2C: SDA&nbsp;8, SCL&nbsp;9) | 🧪 Firmware + dashboard, hardware untested |
 | — | **Command terminal**: handheld UI and IR blaster | M5StickC Plus2 | ⏳ Planned |
 
 The CC1101 sub-GHz and RDM6300 125&nbsp;kHz modules from the original plan are out of scope for this hardware revision.

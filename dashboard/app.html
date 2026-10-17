@@ -83,6 +83,20 @@
         </div>
       </div>
 
+      <div class="s-nfc">
+        <button class="sub-toggle" aria-expanded="false" aria-controls="list-nfc" onclick="toggleSub(this)">
+          <span>Subsystem 5 · NFC</span><span class="chev">▾</span>
+        </button>
+        <div class="sub-list" id="list-nfc" hidden>
+          <button class="mod-btn" data-mod="5.1" onclick="switchModule('5.1', this)">5.1 NFC Detection</button>
+          <button class="mod-btn" data-mod="5.2" onclick="switchModule('5.2', this)">5.2 Block Read</button>
+          <button class="mod-btn" data-mod="5.3" onclick="switchModule('5.3', this)">5.3 Memory Structure</button>
+          <button class="mod-btn" data-mod="5.4" onclick="switchModule('5.4', this)">5.4 NDEF Read</button>
+          <button class="mod-btn" data-mod="5.5" onclick="switchModule('5.5', this)">5.5 Dump Storage</button>
+          <button class="mod-btn" data-mod="5.6" onclick="switchModule('5.6', this)">5.6 Card Emulation</button>
+        </div>
+      </div>
+
       <div class="s-ir">
         <button class="sub-toggle" aria-expanded="false" aria-controls="list-ir" onclick="toggleSub(this)">
           <span>Subsystem 7 · Infrared</span><span class="chev">▾</span>
