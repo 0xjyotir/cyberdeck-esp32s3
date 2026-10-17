@@ -40,7 +40,7 @@ flowchart LR
         IR["07 · Infrared"]
     end
     Deck -- "USB serial · JSON @ 115200" --> DASH["Browser dashboard<br/>(Web Serial)"]
-    Deck -- "SPI" --> TFT["2.8&quot; TFT touchscreen<br/>on-deck menu + output (planned)"]
+    Deck -- "SPI" --> TFT["2.8#quot; TFT touchscreen<br/>on-deck menu + output (planned)"]
     Deck -- "SPI" --> RFID["RC522 RFID reader<br/>13.56 MHz (planned)"]
 ```
 
