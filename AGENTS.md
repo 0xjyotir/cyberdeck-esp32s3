@@ -15,7 +15,7 @@ you can continue without re-discovering everything.
 An open-source, pocket-size **ESP32-S3 cyberdeck** for wireless and physical
 security auditing — strictly for learning and **authorized** testing. One
 ESP32-S3 runs a single "unified firmware" that exposes several auditing modules
-(Wi-Fi, BLE, infrared, with nRF24 and NFC planned). A **browser dashboard**
+(Wi-Fi, BLE, nRF24 and infrared). A **browser dashboard**
 talks to the board over **USB Web Serial** and drives those modules live.
 
 The long-term hardware vision is a dual-node design: the ESP32-S3 core engine
@@ -86,13 +86,12 @@ cyberdeck-esp32s3/
 │   │   └── unified_firmware.ino
 │   ├── 01_wifi/                Standalone per-module sketches 1.1–1.6 (reference)
 │   ├── 02_ble/                 Standalone per-module sketches 2.1–2.6 (reference)
-│   ├── 04_2.4ghz_nrf24/        nRF24 modules 4.1–4.6 — folders only, NOT implemented
-│   ├── 05_nfc_pn532/           PN532 modules 5.1–5.6 — folders only, NOT implemented
+│   ├── 04_2.4ghz_nrf24/        Standalone nRF24 sketches 4.1–4.6 (reference)
 │   ├── 07_infrared/            Standalone IR sketches 7.1–7.6 (reference)
 │   └── 00_integrated_cyberdeck_os/
 ├── hardware/                   3d-models/ · schematics/ (placeholders)
 ├── docs/                       Documentation + README images (banner.svg)
-├── data_dumps/                 pcap_captures/ · rfid_dumps/ (capture output)
+├── data_dumps/                 pcap_captures/ (capture output)
 └── .github/workflows/
     └── pages.yml               Deploys dashboard/ to GitHub Pages
 ```
@@ -113,8 +112,7 @@ Single-file Arduino sketch. Structure, top to bottom:
 - **Pin map** (edit here if wiring differs):
   - IR receiver `IR_RX_PIN = GPIO4`, IR transmitter `IR_TX_PIN = GPIO5`.
     GPIO4/5 are plain GPIOs on the S3 (not strapping, not USB, not flash/PSRAM).
-  - **Reserved for future modules** (documented in-code so they don't collide):
-    nRF24 SPI `CE=6 CSN=7 SCK=12 MISO=13 MOSI=11`; PN532 I2C `SDA=8 SCL=9`.
+  - nRF24 SPI `CE=6 CSN=7 SCK=12 MISO=13 MOSI=11`.
   - ⚠️ **Never use GPIO35/36/37** — on octal-PSRAM boards (N8R8 / N16R8) those
     pins are wired to the PSRAM and are unusable.
 - **Global state** — `activeModule` (a `String` like `"1.1"`, or `"NONE"`),
@@ -148,8 +146,6 @@ If you add modules, keep this rule: no unbounded `delay()` / `while()` in
 - **IRremoteESP8266** (David Conran / crankyoldgit) — only for IR decode/replay
   (7.3 / 7.4), but the sketch includes its headers, so it must be installed to
   compile.
-- **Adafruit PN532** + **Adafruit BusIO** — for the PN532 NFC modules (5.x).
-  The sketch includes `<Adafruit_PN532.h>`, so both must be installed to compile.
 - **RF24** (TMRh20) — for the 2.4 GHz nRF24 modules (4.x). The sketch includes
   its headers, so it must be installed to compile.
 - ESP32 BLE + Wi-Fi come with the ESP32 Arduino core.
@@ -220,33 +216,12 @@ Only one module active at a time; `stopModule()` powers the radio down. 4.6 is a
 self-test transmitter for a node you own — not for injecting into other devices.
 Each standalone sketch also lives under `firmware/04_2.4ghz_nrf24/4.x_*/`.
 
-### Subsystem 5 · PN532 NFC — 🧪 firmware + dashboard, HARDWARE UNTESTED
-PN532 on I2C: `SDA=8 SCL=9` (wire the breakout in I2C mode; RSTPDN→3.3 V). Lazy
-init via `ensurePn532()` (`Wire.begin(8,9)` + `nfc.begin()` +
-`getFirmwareVersion()`), which emits `{"status":"error","data":{"msg":"pn532_not_found"}}`
-if the reader is missing — so 5.1 doubles as the wiring check. Full-card reads
-(5.2/5.5) walk **one block/page per `loop()` pass** to stay non-blocking, and
-re-select the card after a MIFARE Classic auth failure.
-
-| id | name | what it does | emits (`data`) |
-|----|------|--------------|----------------|
-| 5.1 | Tag detection | polls for ISO 14443A tags, reports UID on arrival/removal | `uid, uid_len, type` |
-| 5.2 | Block read | walks the card block-by-block (Classic default key A / UL pages) | `block, data, ok` |
-| 5.3 | Memory structure | identifies card family + layout | `uid, type, sectors, blocks, bytes` |
-| 5.4 | NDEF read | reads + decodes the first NDEF record (Text/URI); read-only | `action, record, tnf, type, payload` |
-| 5.5 | Dump storage | block-by-block dump with a running captured count | `stored, block, data` |
-| 5.6 | Card emulation | PN532 target mode, fixed demo identity (never a cloned card) | `uid, mode, status` |
-
-5.4 is read-only in the unified firmware; NDEF **writing** stays a compile-time
-option (`NDEF_WRITE`) only in the standalone sketch, so a START command over USB
-can never overwrite a tag. 5.6 presents a fixed demo UID as a self-test. Each
-standalone sketch also lives under `firmware/05_nfc_pn532/5.x_*/`.
-
 ### Not implemented yet (folders exist, logic does not)
 - **M5StickC Plus2 command terminal** firmware (screen UI, buttons, IR blaster,
   ESP-NOW telemetry render).
-- **CC1101 sub-GHz** and **RDM6300 125 kHz RFID** are **out of scope** for this
-  hardware revision — do not re-add them.
+- **CC1101 sub-GHz**, **RDM6300 125 kHz RFID** and **PN532 NFC** are **out of
+  scope** for this hardware revision — do not re-add them. (PN532 was removed
+  after the test board turned out faulty.)
 
 ---
 
@@ -257,8 +232,8 @@ Serial API; unavailable in Firefox/Safari). It talks only to the board on the
 user's own machine — nothing is sent to any server.
 
 - `index.html` — welcome/landing page. Hero is an animated schematic ESP32-S3
-  board (`assets/js/board.js`, using vendored anime.js) with six pulsing signal
-  lines: Wi-Fi, M5StickC Plus2, BLE, NFC, NRF24, IR. Below the subsystem cards is
+  board (`assets/js/board.js`, using vendored anime.js) with five pulsing signal
+  lines: Wi-Fi, M5StickC Plus2, BLE, NRF24, IR. Below the subsystem cards is
   **the field manual** (`#guide`): a per-function reference for all 24 implemented
   functions, grouped by subsystem as native `<details>` accordions. Each entry
   explains what the function does, defines every telemetry `data` field, shows an
@@ -290,7 +265,7 @@ user's own machine — nothing is sent to any server.
   - `IR_VIEWS` — per-module table headers + row renderer (IR has custom views;
     Wi-Fi and BLE use generic renderers keyed off the `1.`/`2.` prefix).
   - `GROUP` / `ACCENT` — maps a module id prefix to a subsystem accent colour
-    (`--wifi`/`--ble`/`--ir`/`--nrf`/`--nfc`).
+    (`--wifi`/`--ble`/`--ir`/`--nrf`).
   - To add a module button, add a `<button class="mod-btn" data-mod="X.Y"
     onclick="switchModule('X.Y', this)">` in the right `<div class="sub-list">`
     in `app.html`.
@@ -301,7 +276,7 @@ user's own machine — nothing is sent to any server.
 `Anthropic Sans` with **Hanken Grotesk** fallback (Anthropic Sans isn't publicly
 licensed so it can't be bundled — Hanken Grotesk is what actually loads, via
 Google Fonts). Serial console stays **monospace** (JetBrains Mono, `--code`).
-Hero board = dashed schematic with six pulsing lines, **no antenna rings/
+Hero board = dashed schematic with five pulsing lines, **no antenna rings/
 squiggles**. The dashboard **layout** must stay as-is — restyle only, don't
 re-architect it.
 
@@ -375,10 +350,6 @@ TX LED on GPIO5.
 - nRF24 (subsystem 4): all six modules (4.1–4.6) are implemented in the unified
   firmware + dashboard and as standalone sketches (hardware-untested, SPI `CE=6
   CSN=7 SCK=12 MISO=13 MOSI=11`). Needs flashing + an nRF24L01+ to verify.
-- PN532 NFC (subsystem 5): all six modules (5.1–5.6) are implemented in the
-  unified firmware + dashboard and as standalone sketches (hardware-untested,
-  I2C `SDA=8 SCL=9`). Needs flashing + a PN532 (plus the Adafruit PN532 / BusIO
-  libraries) and a tag to verify.
 - Build the M5StickC Plus2 command-terminal firmware (screen UI + ESP-NOW/UART
   link to the core).
 

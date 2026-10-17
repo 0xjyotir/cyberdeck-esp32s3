@@ -40,7 +40,6 @@
           <path class="trace-base" d="M650 380 L860 380 L930 360 L1080 360"/>
           <path class="trace-base" d="M650 410 L650 560 L820 560 L900 650"/>
           <path class="trace-base" d="M550 410 L550 520 L380 520 L300 650"/>
-          <path class="trace-base" d="M550 350 L360 350 L220 350 L130 340"/>
         </g>
 
         <!-- bright signal pulses -->
@@ -50,7 +49,6 @@
           <path id="pulse-ble"  d="M650 380 L860 380 L930 360 L1080 360" stroke-dasharray="26 2600" stroke-dashoffset="2400"/>
           <path id="pulse-ir"   d="M650 410 L650 560 L820 560 L900 650" stroke-dasharray="26 2600" stroke-dashoffset="2400"/>
           <path id="pulse-nrf"  d="M550 410 L550 520 L380 520 L300 650" stroke-dasharray="26 2600" stroke-dashoffset="2400"/>
-          <path id="pulse-nfc"  d="M550 350 L360 350 L220 350 L130 340" stroke-dasharray="26 2600" stroke-dashoffset="2400"/>
         </g>
 
         <!-- edge pads + labels -->
@@ -60,7 +58,6 @@
           <circle cx="1080" cy="360" r="6" fill="var(--ble)"/><text x="1080" y="342" fill="var(--ble)" text-anchor="middle">BLE</text>
           <circle cx="900" cy="650" r="6" fill="var(--ir)"/><text x="900" y="676" fill="var(--ir)" text-anchor="middle">IR</text>
           <circle cx="300" cy="650" r="6" fill="var(--nrf)"/><text x="300" y="676" fill="var(--nrf)" text-anchor="middle">NRF24</text>
-          <circle cx="130" cy="340" r="6" fill="var(--nfc)"/><text x="130" y="322" fill="var(--nfc)" text-anchor="middle">NFC</text>
         </g>
 
 
@@ -98,14 +95,14 @@
         <span class="word"><em>deck.</em></span>
       </h1>
       <p class="byline">by <b>Sannidhya Biswas</b> &amp; <b>Jyotiraditya Kansal</b></p>
-      <p class="lede">A pocket-size deck that listens across Wi-Fi, Bluetooth, 2.4&nbsp;GHz, NFC and infrared — and reports every reading straight to your browser.</p>
+      <p class="lede">A pocket-size deck that listens across Wi-Fi, Bluetooth, 2.4&nbsp;GHz and infrared — and reports every reading straight to your browser.</p>
       <div class="cta">
         <a class="btn btn-primary" href="app.html">Open the dashboard <span class="arrow">&rarr;</span></a>
         <a class="btn" href="#facts">What it does</a>
       </div>
       <div class="spec">
         <span><b>ESP32-S3</b> N16R8</span>
-        <span><b>5</b> subsystems</span>
+        <span><b>4</b> subsystems</span>
         <span><b>115200</b> baud serial</span>
         <span><b>~&#8377;3,330</b> build</span>
       </div>
@@ -114,7 +111,7 @@
 
   <div class="strip"><div class="wrap">
     <div class="stat"><div class="n" data-to="24">24</div><div class="l">Live modules, one firmware</div></div>
-    <div class="stat"><div class="n" data-to="5">5</div><div class="l">Radio &amp; optical subsystems</div></div>
+    <div class="stat"><div class="n" data-to="4">4</div><div class="l">Radio &amp; optical subsystems</div></div>
     <div class="stat"><div class="n" data-to="6">6</div><div class="l">Infrared tools, scope-tested</div></div>
     <div class="stat"><div class="n" data-to="1">1</div><div class="l">USB cable to run it all</div></div>
   </div></div>
@@ -122,14 +119,13 @@
   <section class="facts wrap" id="facts">
     <div class="head">
       <p class="eyebrow">The subsystems</p>
-      <h2>One state machine, five ways to read the room.</h2>
+      <h2>One state machine, four ways to read the room.</h2>
     </div>
     <div class="grid">
       <article class="card c-wifi reveal"><span class="bar-line"></span><div class="k">01 · Wi-Fi</div><h3>802.11 recon</h3><p>Scan airspace, log access points and walk raw management frames in promiscuous mode.</p></article>
       <article class="card c-ble reveal"><span class="bar-line"></span><div class="k">02 · BLE</div><h3>Bluetooth LE</h3><p>Enumerate GATT services, read live characteristic values and verify custom beacons.</p></article>
       <article class="card c-ir reveal"><span class="bar-line"></span><div class="k">07 · Infrared</div><h3>38&nbsp;kHz optical</h3><p>Learn a remote's mark/space timing, decode NEC &amp; Sony, then replay it back. Tomorrow's demo.</p></article>
       <article class="card c-nrf reveal"><span class="bar-line"></span><div class="k">04 · nRF24</div><h3>2.4&nbsp;GHz</h3><p>Sweep the band and watch for low-power transceiver traffic. Hardware stage, coming online.</p></article>
-      <article class="card c-nfc reveal"><span class="bar-line"></span><div class="k">05 · NFC</div><h3>13.56&nbsp;MHz</h3><p>Read ISO&nbsp;14443A tags and dump card memory with the PN532. Hardware stage.</p></article>
       <article class="card reveal"><span class="bar-line"></span><div class="k">The point</div><h3>It all lands here</h3><p>Connect over USB serial and every module streams its telemetry into one live dashboard.</p></article>
     </div>
   </section>
@@ -139,7 +135,7 @@
     <div class="head">
       <p class="eyebrow">The field manual</p>
       <h2>Every function, explained &mdash; and the exact code behind it.</h2>
-      <p class="guide-lede">A full reference for all 24 functions implemented across the five subsystems: what each one does, what every field of its telemetry means, a sample of the live output, and a link straight to that function&rsquo;s own standalone <code>.ino</code> sketch on GitHub. Tap any row to open it.</p>
+      <p class="guide-lede">A full reference for all 24 functions implemented across the four subsystems: what each one does, what every field of its telemetry means, a sample of the live output, and a link straight to that function&rsquo;s own standalone <code>.ino</code> sketch on GitHub. Tap any row to open it.</p>
     </div>
     <div class="guide-wrap">
       <div class="guide-group c-wifi">
@@ -554,16 +550,6 @@
             </a>
           </div>
         </details>
-        </div>
-      </div>
-      <div class="guide-group c-nfc">
-        <div class="guide-group-head">
-          <span class="gg-num">05</span>
-          <h3>NFC · PN532</h3>
-        </div>
-
-        <div class="guide-list">
-          <p class="guide-note">The PN532 NFC subsystem (5.1&ndash;5.6: ISO&nbsp;14443A detection, tag reads, memory structure, NDEF read/write, dump storage and card emulation) is mapped out but <strong>not implemented yet</strong>. It&rsquo;s next on the roadmap &mdash; this guide will fill in once the firmware and dashboard land.</p>
         </div>
       </div>
       <div class="guide-group c-ir">

@@ -3,7 +3,7 @@
    Restyle only: every id/class the Web Serial logic in dashboard.js depends on
    is preserved. Everything here is scoped to body.app so the Blueprint landing
    page (which never loads this file) is untouched. Reuses the subsystem hues
-   (--wifi/--ble/--ir/--nrf/--nfc) and --ok/--err from base.css. */
+   (--wifi/--ble/--ir/--nrf) and --ok/--err from base.css. */
 
 html, body { height: 100%; }
 
@@ -95,7 +95,7 @@ body.app > * { position: relative; z-index: 1; }
 .mod-btn:hover { background: rgba(255,255,255,.05); color: var(--txt); }
 .mod-btn.active { background: linear-gradient(180deg,#1f90ff,var(--blue)); color: #fff; border-color: transparent; box-shadow: 0 4px 12px rgba(10,132,255,.38); }
 .s-wifi { --chip: var(--wifi); } .s-ble { --chip: var(--ble); } .s-ir { --chip: var(--ir); }
-.s-nrf { --chip: var(--nrf); } .s-nfc { --chip: var(--nfc); }
+.s-nrf { --chip: var(--nrf); }
 
 /* working column: telemetry (grows) + serial (pinned bottom) */
 .main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 12px; }

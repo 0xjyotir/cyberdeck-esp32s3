@@ -47,7 +47,7 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
 .stat:nth-child(1) .n { color: var(--wifi); }
 .stat:nth-child(2) .n { color: var(--ble); }
 .stat:nth-child(3) .n { color: var(--ir); }
-.stat:nth-child(4) .n { color: var(--nfc); }
+.stat:nth-child(4) .n { color: var(--m5); }
 
 /* facts */
 section.facts { padding-block: clamp(70px, 12vw, 140px); }
@@ -60,7 +60,7 @@ section.facts { padding-block: clamp(70px, 12vw, 140px); }
 .card p { margin-top: 10px; color: var(--mute); font-size: 14.5px; }
 .card .bar-line { position: absolute; left: 0; top: 26px; bottom: 26px; width: 3px; border-radius: 3px; background: var(--chip, var(--line2)); }
 .c-wifi { --chip: var(--wifi); } .c-ble { --chip: var(--ble); } .c-ir { --chip: var(--ir); }
-.c-nrf { --chip: var(--nrf); } .c-nfc { --chip: var(--nfc); }
+.c-nrf { --chip: var(--nrf); }
 
 footer { border-top: 1px solid var(--line); padding-block: 40px; color: var(--faint); font-size: 13.5px; }
 footer .wrap { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
@@ -88,7 +88,7 @@ section.guide { padding-block: 0 clamp(70px, 12vw, 130px); }
 
 .guide-group { --chip: var(--line2); }
 .c-wifi { --chip: var(--wifi); } .c-ble { --chip: var(--ble); }
-.c-nrf { --chip: var(--nrf); } .c-nfc { --chip: var(--nfc); } .c-ir { --chip: var(--ir); }
+.c-nrf { --chip: var(--nrf); } .c-ir { --chip: var(--ir); }
 .guide-group-head { display: flex; align-items: baseline; gap: 14px; padding-bottom: 14px;
   border-bottom: 1px dashed var(--line2); }
 .gg-num { font: 500 12px/1 var(--mono); letter-spacing: .14em; color: var(--chip);
