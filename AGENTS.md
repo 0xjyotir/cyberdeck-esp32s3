@@ -23,8 +23,15 @@ The hardware vision is a single self-contained deck: the ESP32-S3 plus a
 picking modules and reading their output without a laptop, and an **RC522
 13.56 MHz RFID reader**. The earlier plan for an M5StickC Plus2 command terminal
 is **dropped**. The RC522 RFID modules (5.1–5.6) are now in the unified firmware
-and dashboard; the **2.8" TFT on-deck UI is the one piece with no firmware yet**.
-Today everything is driven from the browser dashboard over USB.
+and dashboard.
+
+The project has entered the **on-deck stage**: the 2.8" TFT is working on
+hardware, and the **integrated cyberdeck firmware**
+(`firmware/00_integrated_cyberdeck_firmware/`) drives the deck from its own
+touchscreen. Going forward that is the main ("unified") firmware the owner
+flashes. **It is not at parity yet:** today it carries Wi-Fi (1.x) and BLE
+(2.x) on-deck; nRF24, RFID and IR are still only in the USB-only
+`firmware/unified_firmware/`, which stays in the repo until they are ported.
 
 ### Ethical scope (do not ignore)
 This is defensive / educational security tooling. Only ever add capabilities
@@ -84,13 +91,15 @@ cyberdeck-esp32s3/
 │       ├── js/                 board.js (hero animation) · dashboard.js (Web Serial + modules) · resize.js (draggable panes) · spectrum.js (4.1 graph)
 │       └── vendor/             anime.min.js (vendored; do not fetch from a CDN)
 ├── firmware/
-│   ├── unified_firmware/       ⭐ THE firmware to flash — every module in one JSON loop
+│   ├── 00_integrated_cyberdeck_firmware/  ⭐ The on-deck firmware: TFT touch UI + Wi-Fi/BLE + same JSON loop
+│   │   └── 00_integrated_cyberdeck_firmware.ino
+│   ├── unified_firmware/       USB-only firmware with ALL 5 subsystems (kept until nRF24/RFID/IR are ported on-deck)
 │   │   └── unified_firmware.ino
 │   ├── 01_wifi/                Standalone per-module sketches 1.1–1.6 (reference)
 │   ├── 02_ble/                 Standalone per-module sketches 2.1–2.6 (reference)
 │   ├── 04_2.4ghz_nrf24/        Standalone nRF24 sketches 4.1–4.6 (reference)
-│   ├── 07_infrared/            Standalone IR sketches 7.1–7.6 (reference)
-│   └── 00_integrated_cyberdeck_os/
+│   ├── 05_rfid_rc522/          Standalone RC522 sketches 5.1–5.6 (reference)
+│   └── 07_infrared/            Standalone IR sketches 7.1–7.6 (reference)
 ├── hardware/                   3d-models/ · schematics/ (placeholders)
 ├── docs/                       Documentation + README images (banner.svg)
 ├── data_dumps/                 pcap_captures/ (capture output)
@@ -99,11 +108,17 @@ cyberdeck-esp32s3/
 ```
 
 The per-module folders under `firmware/01_*`, `02_*`, `07_*` are the **original
-standalone sketches**, kept as reference. The firmware that actually runs on the
-board is `firmware/unified_firmware/unified_firmware.ino` — it merges those
-modules behind one command loop. When you add a capability, port it **into the
-unified firmware**; the standalone sketch is just where the logic was first
-proven.
+standalone sketches**, kept as reference. Two merged firmwares sit on top of them:
+
+- `firmware/00_integrated_cyberdeck_firmware/` — **the main firmware from now on.**
+  The deck is navigated and used from the 2.8" TFT; the USB dashboard still
+  works at the same time over the same protocol. See §4b.
+- `firmware/unified_firmware/` — the USB-only build with every module (§4). It
+  remains the way to run nRF24 / RFID / IR until those are ported on-deck.
+
+When you add a capability, put it **into the integrated firmware** (and keep the
+unified firmware working until the integrated one reaches parity); the
+standalone sketch is just where the logic was first proven.
 
 ---
 
@@ -118,9 +133,9 @@ Single-file Arduino sketch. Structure, top to bottom:
   - RC522 RFID (subsystem 5) on the **shared nRF24 SPI bus** (`SCK=12 MISO=13
     MOSI=11`) with its own chip-select: `SS=10 RST=9`, 3.3 V only, IRQ unused.
     Only one module is ever active, so the shared bus is safe.
-  - **Reserved, proposed (no firmware yet):** TFT on its own SPI bus
-    `SCK=21 MOSI=18 MISO=47 CS=15 DC=16 RST=17 LED=8`, touch `T_CS=1 T_IRQ=2`.
-    Listed as comments in the firmware pin map so nothing else takes them.
+  - The 2.8" TFT is **not** in this firmware; its locked pins (§4b) collide
+    with the RC522/nRF24/IR pins above. When those subsystems join the
+    integrated firmware, **they** move; the display never does.
   - ⚠️ **Never use GPIO35/36/37** — on octal-PSRAM boards (N8R8 / N16R8) those
     pins are wired to the PSRAM and are unusable.
 - **Global state** — `activeModule` (a `String` like `"1.1"`, or `"NONE"`),
@@ -161,6 +176,48 @@ If you add modules, keep this rule: no unbounded `delay()` / `while()` in
 - ESP32 BLE + Wi-Fi come with the ESP32 Arduino core.
 
 Target board: **ESP32-S3** (dev notes assume N16R8 / N8R8 octal-PSRAM).
+
+---
+
+## 4b. Integrated cyberdeck firmware (`00_integrated_cyberdeck_firmware.ino`)
+
+Single self-contained `.ino` (the owner wants no extra headers or zips). The
+Wi-Fi/BLE module code (`startModule` / `stopModule` / `handleSerialCommand` /
+`runActiveModule` / BLE callbacks) is copied **verbatim** from
+`unified_firmware`, and `emitTelemetry()` calls a `uiOnTelemetry()` hook that
+turns each telemetry line into an on-screen row, so the screen and the USB
+dashboard always agree. A module started from the dashboard makes the screen
+jump to its live view (`syncScreenToSerial()`).
+
+- **Hardware:** 2.8" ILI9341 (320×240, rotation 1) + XPT2046 touch.
+- **Display pins — LOCKED by the owner, never change them:** `CS=10 DC=9 RST=8
+  LED/BL=7 T_CS=4 T_IRQ=5`, shared SPI `SCK=12 MOSI=11 MISO=13`, VCC 3.3 V.
+  If other subsystems are added to this board, rewire **them** around the display.
+- **Libraries:** Adafruit ILI9341 + Adafruit GFX + Adafruit BusIO, ArduinoJson
+  v7. Fonts come from Adafruit GFX's bundled `Fonts/` folder (FreeSans9pt7b,
+  FreeSansBold9pt7b) — don't add external font files. **Not** TFT_eSPI (white
+  screen on core 3.3.x) and **not** the XPT2046_Touchscreen library.
+- **Board settings:** ESP32S3 Dev Module, Flash 16MB, PSRAM "OPI PSRAM", USB CDC
+  On Boot Enabled.
+- **Touch:** custom XPT2046 driver inside the sketch (8-sample trimmed mean,
+  pressure hysteresis, DOWN/MOVE/UP events polled every 5 ms) and a 5-point
+  affine calibration saved in `Preferences` (runs on first boot, or hold the
+  screen at power-on, or Setup → Recalibrate). Buttons highlight on DOWN and
+  act on UP.
+- **Screens:** home (subsystem tiles) → module list → live view (START/HALT,
+  scrolling result rows, status line), plus Setup, touch test and calibration.
+  nRF24 / RFID / IR tiles say "Not on deck" and open a note pointing at
+  `unified_firmware`.
+- **Theme:** dark "industrial" palette (`C_BG`/`C_PANEL`/`C_RAISED`/`C_EDGE`
+  surfaces, `C_TEXT`/`C_MUTED`/`C_DIM` text, one accent per subsystem). Use
+  `printAt()` for the classic 6×8 font (it resets the GFX font) and `fontAt()`
+  for FreeSans.
+- **Non-blocking:** redraws are `millis()`-gated (live list at most ~8×/s). The
+  same BLE caveat applies: GATT modules 2.2/2.5/2.6 freeze the UI ~1–3 s per
+  connect attempt.
+- **Checking layout without hardware:** compile the drawing code against the
+  real Adafruit GFX library with a framebuffer subclass and dump PNGs (the
+  owner's project files keep a small render harness for this).
 
 ---
 
@@ -255,8 +312,9 @@ exception. Each standalone sketch also lives under
 `firmware/05_rfid_rc522/5.x_*/`.
 
 ### Not implemented yet (folders exist, logic does not)
-- **2.8" TFT on-deck UI** (module menu via touch, live output view). Must keep
-  `loop()` non-blocking: redraw in small `millis()`-gated steps.
+- **nRF24 / RFID / IR on-deck:** not yet in the integrated firmware (§4b). Needs
+  their pins moved off the display's locked pins first, then the module code
+  ported and a screen view per module. Must keep `loop()` non-blocking.
 - The **M5StickC Plus2** terminal is dropped; don't build for it.
 - **CC1101 sub-GHz**, **RDM6300 125 kHz RFID** and **PN532 NFC** are **out of
   scope** for this hardware revision — do not re-add them. (PN532 was removed
@@ -381,11 +439,14 @@ These are firm — follow them unless the owner says otherwise:
 
 ---
 
-## 10. Current state & what's next (as of the RFID-integration + TFT planning phase)
+## 10. Current state & what's next (as of the integrated on-deck firmware stage)
 
 **Done:** Wi-Fi (1.1–1.6) and BLE (2.1–2.6) implemented and tested; IR (7.1–7.6)
 implemented in firmware + dashboard but **not yet tested on hardware**; dashboard
-redesigned (Blueprint) and deployed to GitHub Pages; README refreshed.
+redesigned (Blueprint) and deployed to GitHub Pages; README refreshed. 2.8" TFT +
+touch working on hardware; integrated cyberdeck firmware (§4b) runs Wi-Fi + BLE
+from the touchscreen with a dark industrial UI (uncompiled in the cloud; the
+owner flashes and tests).
 
 **Immediate goal:** get the IR modules **tested on real hardware** end-to-end
 (flash unified firmware → open dashboard → exercise 7.1–7.6 with an IR
@@ -402,8 +463,10 @@ TX LED on GPIO5.
   uncompiled in the cloud (no Arduino toolchain) and needs a flash + a card to
   exercise 5.1–5.6 end-to-end. Clone (5.4) writes and NDEF (5.5) writes stay
   gated off by default.
-- Build the 2.8" TFT on-deck UI (module menu + output view) in the unified
-  firmware — the remaining subsystem with no firmware.
+- Integrated firmware UI: 3×3 home grid with scroll arrows, a Settings tile
+  (brightness, light/dark mode), and an "i" info article for every function.
+- Port nRF24 / RFID / IR into the integrated firmware (after re-pinning them
+  around the locked display pins), then retire `unified_firmware`.
 
 For a longer, narrative history of decisions and milestones, see the project
 documentation files kept with the project (context/architecture + progress/
