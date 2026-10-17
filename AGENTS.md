@@ -22,8 +22,9 @@ The hardware vision is a single self-contained deck: the ESP32-S3 plus a
 **2.8" SPI TFT touchscreen** (assumed ILI9341 240×320 + XPT2046 touch) for
 picking modules and reading their output without a laptop, and an **RC522
 13.56 MHz RFID reader**. The earlier plan for an M5StickC Plus2 command terminal
-is **dropped**. Neither the TFT UI nor the RC522 modules have firmware yet —
-today everything is driven from the browser dashboard over USB.
+is **dropped**. The RC522 RFID modules (5.1–5.6) are now in the unified firmware
+and dashboard; the **2.8" TFT on-deck UI is the one piece with no firmware yet**.
+Today everything is driven from the browser dashboard over USB.
 
 ### Ethical scope (do not ignore)
 This is defensive / educational security tooling. Only ever add capabilities
@@ -114,8 +115,10 @@ Single-file Arduino sketch. Structure, top to bottom:
   - IR receiver `IR_RX_PIN = GPIO4`, IR transmitter `IR_TX_PIN = GPIO5`.
     GPIO4/5 are plain GPIOs on the S3 (not strapping, not USB, not flash/PSRAM).
   - nRF24 SPI `CE=6 CSN=7 SCK=12 MISO=13 MOSI=11`.
-  - **Reserved, proposed (no firmware yet):** RC522 on the nRF24 SPI bus with
-    `SS=10 RST=9` (3.3 V only, IRQ unused); TFT on its own SPI bus
+  - RC522 RFID (subsystem 5) on the **shared nRF24 SPI bus** (`SCK=12 MISO=13
+    MOSI=11`) with its own chip-select: `SS=10 RST=9`, 3.3 V only, IRQ unused.
+    Only one module is ever active, so the shared bus is safe.
+  - **Reserved, proposed (no firmware yet):** TFT on its own SPI bus
     `SCK=21 MOSI=18 MISO=47 CS=15 DC=16 RST=17 LED=8`, touch `T_CS=1 T_IRQ=2`.
     Listed as comments in the firmware pin map so nothing else takes them.
   - ⚠️ **Never use GPIO35/36/37** — on octal-PSRAM boards (N8R8 / N16R8) those
@@ -153,6 +156,8 @@ If you add modules, keep this rule: no unbounded `delay()` / `while()` in
   compile.
 - **RF24** (TMRh20) — for the 2.4 GHz nRF24 modules (4.x). The sketch includes
   its headers, so it must be installed to compile.
+- **MFRC522** (miguelbalboa) — for the RC522 RFID modules (5.x). The sketch
+  includes its headers, so it must be installed to compile.
 - ESP32 BLE + Wi-Fi come with the ESP32 Arduino core.
 
 Target board: **ESP32-S3** (dev notes assume N16R8 / N8R8 octal-PSRAM).
@@ -221,11 +226,37 @@ Only one module active at a time; `stopModule()` powers the radio down. 4.6 is a
 self-test transmitter for a node you own — not for injecting into other devices.
 Each standalone sketch also lives under `firmware/04_2.4ghz_nrf24/4.x_*/`.
 
+### Subsystem 5 · RFID (RC522, 5.1–5.6) — ✅ firmware + dashboard
+RC522 13.56 MHz (ISO-14443A) reader on the SPI bus **shared with the nRF24**
+(`SCK=12 MISO=13 MOSI=11`) with its own chip-select (`SS=10 RST=9`, 3.3 V only,
+IRQ unused). Lazy init via `ensureRc522()`, which runs `PCD_Init()` + a version-
+register check and emits `{"status":"error","data":{"msg":"rc522_not_found"}}`
+if the reader is missing — so 5.1 doubles as the wiring check. Authorized /
+educational use only — read/inspect cards you own or are permitted to test.
+
+| id | name | what it does | emits (`data`) |
+|----|------|--------------|----------------|
+| 5.1 | Card fingerprint | UID / ATQA / SAK + derived card type; the RC522 wiring check | `uid, uid_len, atqa, sak, type` |
+| 5.2 | Memory dump | read-only per-block dump with the default key (Classic) / pages (UL/NTAG) | `sector, block, data, key_used, auth` + `blocks_read, blocks_locked, done` |
+| 5.3 | Default-key audit | dictionary of common keys per sector → A–F grade (pure read/auth) | `sector, result, key_found` + `weak_sectors, total_sectors, grade, done` |
+| 5.4 | Clone to magic card | read an owned source, write to an owned magic card, verify | `stage, uid, blocks_cached` / `blocks_written, verify, target_type` |
+| 5.5 | NDEF read / write | decode first URI/Text record (write behind a compile switch) | `record_type, payload, tag_type, capacity` / `bytes_written, verify` |
+| 5.6 | Reader monitor | passive log of every card presented, ring buffer + distinct count | `uid, type, t_ms, seen_count` + `distinct, total_reads, summary` |
+
+**Safety gates (compile-time, OFF by default — identical to the standalone
+sketches):** `RFID_OPERATOR_OWNS_CARDS 0` makes 5.4 read the source and report
+but refuse every write with `ownership_not_acknowledged`; even set to 1 it
+refuses non-magic targets and never writes a sector trailer. `RFID_NDEF_MODE_WRITE 0`
+keeps 5.5 read-only. Only one module active at a time; `stopModule()` halts the
+PICC and releases Crypto1 (5.6 emits a final distinct/total summary on stop). The
+per-card operations in 5.2/5.3/5.4 run to completion in one `loop()` pass once a
+card is detected — bounded, one-shot work, the same category as the BLE connect
+exception. Each standalone sketch also lives under
+`firmware/05_rfid_rc522/5.x_*/`.
+
 ### Not implemented yet (folders exist, logic does not)
 - **2.8" TFT on-deck UI** (module menu via touch, live output view). Must keep
   `loop()` non-blocking: redraw in small `millis()`-gated steps.
-- **RC522 RFID (subsystem 5)** — hardware in hand, modules not chosen yet. Use
-  the MFRC522 library; scope is reading/inspecting cards the operator owns.
 - The **M5StickC Plus2** terminal is dropped; don't build for it.
 - **CC1101 sub-GHz**, **RDM6300 125 kHz RFID** and **PN532 NFC** are **out of
   scope** for this hardware revision — do not re-add them. (PN532 was removed
@@ -244,10 +275,10 @@ user's own machine — nothing is sent to any server.
   lines: Wi-Fi, 2.8" TFT, BLE, NRF24, IR, RC522 RFID. Six subsystem cards
   (Wi-Fi, BLE, IR, nRF24, RFID, on-deck screen) sit in an even 3×2 grid, with
   "The point" as a full-width strip (`.card-wide`) beneath them; keep the count
-  at six so the grid stays even. RFID also has a "not implemented yet" group in
-  the field manual. Below the subsystem cards is
-  **the field manual** (`#guide`): a per-function reference for all 24 implemented
-  functions, grouped by subsystem as native `<details>` accordions. Each entry
+  at six so the grid stays even. Below the subsystem cards is
+  **the field manual** (`#guide`): a per-function reference for all 30 implemented
+  functions (including the six RFID 5.x functions), grouped by subsystem as native
+  `<details>` accordions. Each entry
   explains what the function does, defines every telemetry `data` field, shows an
   example telemetry line, and links to that function's own standalone `.ino` on
   GitHub (not the unified firmware). Pure HTML/CSS, no new JS. When you add or
@@ -274,10 +305,13 @@ user's own machine — nothing is sent to any server.
 - `assets/js/dashboard.js` — the Web Serial bridge and all module metadata. Key
   objects to edit when adding a module:
   - `TITLES` / `DESCS` — the module title + description text.
-  - `IR_VIEWS` — per-module table headers + row renderer (IR has custom views;
-    Wi-Fi and BLE use generic renderers keyed off the `1.`/`2.` prefix).
+  - `IR_VIEWS` / `NRF_VIEWS` / `RFID_VIEWS` — per-module table headers + row
+    renderer (IR, nRF24 and RFID have custom views; Wi-Fi and BLE use generic
+    renderers keyed off the `1.`/`2.` prefix). `updateTelemetry()` also maps a
+    few RFID status codes (`rc522_not_found`, `ownership_not_acknowledged`, …) to
+    friendly lines.
   - `GROUP` / `ACCENT` — maps a module id prefix to a subsystem accent colour
-    (`--wifi`/`--ble`/`--ir`/`--nrf`).
+    (`--wifi`/`--ble`/`--ir`/`--nrf`/`--rfid`).
   - To add a module button, add a `<button class="mod-btn" data-mod="X.Y"
     onclick="switchModule('X.Y', this)">` in the right `<div class="sub-list">`
     in `app.html`.
@@ -347,7 +381,7 @@ These are firm — follow them unless the owner says otherwise:
 
 ---
 
-## 10. Current state & what's next (as of the IR-testing + RFID/TFT planning phase)
+## 10. Current state & what's next (as of the RFID-integration + TFT planning phase)
 
 **Done:** Wi-Fi (1.1–1.6) and BLE (2.1–2.6) implemented and tested; IR (7.1–7.6)
 implemented in firmware + dashboard but **not yet tested on hardware**; dashboard
@@ -362,10 +396,14 @@ TX LED on GPIO5.
 - nRF24 (subsystem 4): all six modules (4.1–4.6) are implemented in the unified
   firmware + dashboard and as standalone sketches (hardware-untested, SPI `CE=6
   CSN=7 SCK=12 MISO=13 MOSI=11`). Needs flashing + an nRF24L01+ to verify.
-- RC522 RFID (subsystem 5): pick the six modules, then build them into the
-  unified firmware + dashboard + standalone sketches.
+- RC522 RFID (subsystem 5): all six modules (5.1–5.6) are now implemented in the
+  unified firmware + dashboard and as standalone sketches. Ron has verified the
+  RC522 on hardware (5.2 confirmed working); the unified-firmware port is
+  uncompiled in the cloud (no Arduino toolchain) and needs a flash + a card to
+  exercise 5.1–5.6 end-to-end. Clone (5.4) writes and NDEF (5.5) writes stay
+  gated off by default.
 - Build the 2.8" TFT on-deck UI (module menu + output view) in the unified
-  firmware.
+  firmware — the remaining subsystem with no firmware.
 
 For a longer, narrative history of decisions and milestones, see the project
 documentation files kept with the project (context/architecture + progress/

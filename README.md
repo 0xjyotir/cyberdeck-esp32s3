@@ -8,7 +8,7 @@
 
 <p align="center">
   A pocket-size, open-source field deck for wireless and physical security auditing.<br>
-  One ESP32-S3 listens across Wi-Fi, Bluetooth, 2.4&nbsp;GHz and infrared, and streams every reading to a live browser dashboard. An RC522 RFID reader and a 2.8" touchscreen are next.
+  One ESP32-S3 listens across Wi-Fi, Bluetooth, 2.4&nbsp;GHz, infrared and 13.56&nbsp;MHz RFID, and streams every reading to a live browser dashboard. A 2.8" on-deck touchscreen is next.
 </p>
 
 <p align="center">
@@ -23,7 +23,7 @@
 
 **👉 [rronium.github.io/cyberdeck-esp32s3](https://rronium.github.io/cyberdeck-esp32s3/)**
 
-The welcome page introduces the deck; **Try it** opens the dashboard. It also carries **the field manual** — a reference below the subsystem cards that explains all 24 implemented functions in depth (what each does, what every telemetry field means, an example of the live output) and links straight to each function's standalone `.ino` on GitHub. Plug the ESP32-S3 into your computer over USB, click **Connect USB serial**, pick a module and press **Start module**. Drag the edges between panes (sidebar | telemetry | serial console) to resize them; no pane grows past 75% of the space, sizes are remembered, and double-clicking an edge resets it. Each pane has a **Clear** button, and nRF24 module 4.1 draws a live spectrum graph (bars, peak hold, waterfall) instead of a table, while the raw JSON still scrolls in the serial console.
+The welcome page introduces the deck; **Try it** opens the dashboard. It also carries **the field manual** — a reference below the subsystem cards that explains all 30 implemented functions in depth (what each does, what every telemetry field means, an example of the live output) and links straight to each function's standalone `.ino` on GitHub. Plug the ESP32-S3 into your computer over USB, click **Connect USB serial**, pick a module and press **Start module**. Drag the edges between panes (sidebar | telemetry | serial console) to resize them; no pane grows past 75% of the space, sizes are remembered, and double-clicking an edge resets it. Each pane has a **Clear** button, and nRF24 module 4.1 draws a live spectrum graph (bars, peak hold, waterfall) instead of a table, while the raw JSON still scrolls in the serial console.
 
 > Web Serial only works in desktop **Chrome** or **Edge**. The page talks to the board plugged into *your* computer; nothing is sent to a server.
 
@@ -41,7 +41,7 @@ flowchart LR
     end
     Deck -- "USB serial · JSON @ 115200" --> DASH["Browser dashboard<br/>(Web Serial)"]
     Deck -- "SPI" --> TFT["2.8#quot; TFT touchscreen<br/>on-deck menu + output (planned)"]
-    Deck -- "SPI" --> RFID["RC522 RFID reader<br/>13.56 MHz (planned)"]
+    Deck -- "SPI" --> RFID["RC522 RFID reader<br/>13.56 MHz"]
 ```
 
 The browser sends `{"module": "7.4", "action": "START"}` and the board answers with lines like `{"module": "7.4", "status": "ok", "data": {...}}`.
@@ -54,7 +54,7 @@ The browser sends `{"module": "7.4", "action": "START"}` and the board answers w
 | 02 | **BLE**: scan, GATT services, advertisement capture, custom beacons, GATT explorer, device testing | ESP32-S3 radio | ✅ Firmware + dashboard |
 | 07 | **Infrared**: 38&nbsp;kHz carrier, pulse learning, replay, protocol decode, signal analysis, LED test | 38&nbsp;kHz IR pair (RX GPIO4, TX GPIO5) | 🧪 Firmware + dashboard, hardware testing in progress |
 | 04 | **nRF24**: spectrum scan, packet sniffer, address discovery, protocol analysis, packet storage, lab transmitter (4.1–4.6) | nRF24L01+ (SPI: CE&nbsp;6, CSN&nbsp;7, SCK&nbsp;12, MISO&nbsp;13, MOSI&nbsp;11) | 🧪 Firmware + dashboard, hardware untested |
-| 05 | **RFID**: 13.56&nbsp;MHz MIFARE / ISO&nbsp;14443A reading and inspection of your own cards | RC522 (SPI, shares the nRF24 bus; SS&nbsp;10, RST&nbsp;9, proposed) | ⏳ Hardware in hand, firmware planned |
+| 05 | **RFID**: card fingerprint, memory dump, default-key audit, clone to magic card, NDEF read/write, reader monitor (5.1–5.6) — your own 13.56&nbsp;MHz MIFARE / ISO&nbsp;14443A cards | RC522 (SPI, shares the nRF24 bus; SS&nbsp;10, RST&nbsp;9) | 🧪 Firmware + dashboard, hardware testing in progress |
 | — | **On-deck screen**: pick modules and read their output without a laptop | 2.8" ILI9341 TFT + XPT2046 touch (own SPI bus, proposed) | ⏳ Hardware in hand, firmware planned |
 
 The CC1101 sub-GHz, RDM6300 125&nbsp;kHz and PN532 NFC modules from the original plan are out of scope for this hardware revision. The M5StickC Plus2 command terminal has been dropped in favour of the 2.8" TFT built into the deck.
@@ -67,7 +67,7 @@ The CC1101 sub-GHz, RDM6300 125&nbsp;kHz and PN532 NFC modules from the original
 | 38&nbsp;kHz IR receiver | S → GPIO4, middle → 3.3&nbsp;V, minus → GND | Documented |
 | IR LED transmitter | GPIO5 (through a transistor driver) | Documented |
 | nRF24L01+ | CE&nbsp;6, CSN&nbsp;7, SCK&nbsp;12, MOSI&nbsp;11, MISO&nbsp;13, 3.3&nbsp;V with a 10&nbsp;µF cap | Documented |
-| RC522 RFID | SDA(SS)&nbsp;10, RST&nbsp;9, and the shared SCK&nbsp;12 / MOSI&nbsp;11 / MISO&nbsp;13; 3.3&nbsp;V only, IRQ unused | Proposed |
+| RC522 RFID | SDA(SS)&nbsp;10, RST&nbsp;9, and the shared SCK&nbsp;12 / MOSI&nbsp;11 / MISO&nbsp;13; 3.3&nbsp;V only, IRQ unused | In use |
 | 2.8" TFT (ILI9341 + XPT2046 touch) | SCK&nbsp;21, MOSI&nbsp;18, MISO&nbsp;47, CS&nbsp;15, DC&nbsp;16, RST&nbsp;17, LED&nbsp;8; touch T_CS&nbsp;1, T_IRQ&nbsp;2 | Proposed |
 
 Never wire anything to GPIO35, 36 or 37: on N8R8 / N16R8 boards they belong to the PSRAM. The RC522 and nRF24 can share one SPI bus because only one module runs at a time and each has its own chip-select. The TFT gets its own bus so screen redraws never hold up a radio.
