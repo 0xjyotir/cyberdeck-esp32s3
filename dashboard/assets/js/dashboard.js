@@ -11,8 +11,8 @@
 
   /* ---- subsystem accent, used for the module panel + active sidebar item ---- */
   const GROUP = (m) => m.startsWith("1.") ? "wifi" : m.startsWith("2.") ? "ble"
-    : m.startsWith("4.") ? "nrf" : m.startsWith("5.") ? "nfc" : m.startsWith("7.") ? "ir" : "wifi";
-  const ACCENT = { wifi: "--wifi", ble: "--ble", ir: "--ir", nrf: "--nrf", nfc: "--nfc" };
+    : m.startsWith("4.") ? "nrf" : m.startsWith("7.") ? "ir" : "wifi";
+  const ACCENT = { wifi: "--wifi", ble: "--ble", ir: "--ir", nrf: "--nrf" };
 
   /* ---- collapsible subsystems ---- */
   window.toggleSub = function (btn) {
@@ -165,22 +165,6 @@
       row: d => ["CH " + dash(d.ch), dash(d.addr), dash(d.sent), d.ack ? "ACK" : "no ack"] }
   };
 
-  /* ---- PN532 NFC telemetry views ---- */
-  const NFC_VIEWS = {
-    "5.1": { live: true, headers: ["UID", "Length", "Card Type"],
-      row: d => [d.uid ? dash(d.uid) : "— removed —", dash(d.uid_len), dash(d.type)] },
-    "5.2": { headers: ["Block", "Data (hex)", "Status"],
-      row: d => [dash(d.block), d.data ? dash(d.data) : "—", d.ok ? "read" : "locked"] },
-    "5.3": { live: true, headers: ["UID", "Card Type", "Sectors", "Blocks", "Bytes"],
-      row: d => [dash(d.uid), dash(d.type), dash(d.sectors), dash(d.blocks), dash(d.bytes)] },
-    "5.4": { live: true, headers: ["Action", "Record Type", "TNF", "Payload"],
-      row: d => [dash(d.action), dash(d.type), dash(d.tnf), dash(d.payload)] },
-    "5.5": { live: true, headers: ["Stored", "Block", "Data (hex)"],
-      row: d => [dash(d.stored), dash(d.block), d.data ? dash(d.data) : "—"] },
-    "5.6": { live: true, headers: ["UID", "Mode", "Status"],
-      row: d => [dash(d.uid), dash(d.mode), dash(d.status)] }
-  };
-
   function updateTelemetry(data) {
     const tbody = $("telemetry-body");
     const msg = data.data || data;
@@ -213,8 +197,6 @@
         ? "No IR code captured yet: run 7.2, 7.4 or 7.5 and point a remote at the receiver first."
         : msg.msg === "ledc_attach_failed"
         ? "Could not start the 38kHz carrier on the IR LED pin."
-        : msg.msg === "pn532_not_found"
-        ? "PN532 not found: check SDA=8, SCL=9, 3.3 V, the I2C jumpers and RSTPDN high."
         : msg.msg;
       tr.innerHTML = `<td colspan="4" style="color:${isError ? "var(--err)" : "var(--mute)"}">[${mod}] ${isError ? "ERROR" : "STATUS"}: ${label}</td>`;
     } else if (IR_VIEWS[currentModule]) {
@@ -227,11 +209,6 @@
       const styles = ["color:var(--nrf);font-weight:700", "color:var(--text)", "color:var(--text)", "color:var(--mute);font-size:12px"];
       tr.innerHTML = cells.map((c, i) => `<td style="${styles[i] || "color:var(--text)"}">${c}</td>`).join("");
       if (NRF_VIEWS[currentModule].live) tbody.innerHTML = "";
-    } else if (NFC_VIEWS[currentModule]) {
-      const cells = NFC_VIEWS[currentModule].row(msg);
-      const styles = ["color:var(--nfc);font-weight:700", "color:var(--text)", "color:var(--text)", "color:var(--mute);font-size:12px"];
-      tr.innerHTML = cells.map((c, i) => `<td style="${styles[i] || "color:var(--text)"}">${c}</td>`).join("");
-      if (NFC_VIEWS[currentModule].live) tbody.innerHTML = "";
     } else if (currentModule.startsWith("1.")) {
       const d = msg;
       tr.innerHTML = `
@@ -261,9 +238,6 @@
     "4.1": "MODULE 4.1: 2.4GHZ SPECTRUM SCAN", "4.2": "MODULE 4.2: nRF24 PACKET SNIFFER",
     "4.3": "MODULE 4.3: nRF24 ADDRESS DISCOVERY", "4.4": "MODULE 4.4: nRF24 PROTOCOL ANALYSIS",
     "4.5": "MODULE 4.5: nRF24 PACKET STORAGE", "4.6": "MODULE 4.6: nRF24 LAB TRANSMITTER",
-    "5.1": "MODULE 5.1: NFC TAG DETECTION", "5.2": "MODULE 5.2: ISO 14443A BLOCK READ",
-    "5.3": "MODULE 5.3: CARD MEMORY STRUCTURE", "5.4": "MODULE 5.4: NDEF RECORD READER",
-    "5.5": "MODULE 5.5: CARD DUMP STORAGE", "5.6": "MODULE 5.6: CARD EMULATION",
     "7.1": "MODULE 7.1: 38KHZ CARRIER MODULATION", "7.2": "MODULE 7.2: IR PULSE LEARNING",
     "7.3": "MODULE 7.3: IR SIGNAL REPLAY", "7.4": "MODULE 7.4: IR PROTOCOL DECODE",
     "7.5": "MODULE 7.5: IR SIGNAL ANALYSIS", "7.6": "MODULE 7.6: IR LED CIRCUIT TEST"
@@ -287,12 +261,6 @@
     "4.4": "Captures packets and reports length, data rate and a traffic-type guess.",
     "4.5": "Buffers captured packets in RAM and tracks a running stored count.",
     "4.6": "Low-power test transmitter — sends to your own nRF24 node for link/range testing.",
-    "5.1": "Polls for ISO 14443A tags over I2C and reports each UID and card-type guess on contact.",
-    "5.2": "Walks a presented card block-by-block (MIFARE Classic default key A, Ultralight/NTAG pages).",
-    "5.3": "Identifies the card family and reports its memory layout — sectors, blocks and total bytes.",
-    "5.4": "Reads the first NDEF record off an NTAG/Ultralight and decodes Text/URI payloads. Read-only.",
-    "5.5": "Dumps a card block-by-block into RAM and tracks a running stored-block count.",
-    "5.6": "Emulates a fixed demo tag (PN532 target mode) — a phone should detect it. Never clones a scanned card.",
     "7.1": "Drives a continuous 38kHz, 50% duty carrier on the IR LED. Check it with a phone camera or scope.",
     "7.2": "Records the raw mark/space timings of every IR burst the receiver sees.",
     "7.3": "Re-transmits the last capture from 7.2, 7.4 or 7.5 once (raw at 38kHz if the protocol is unknown), then returns to idle.",
@@ -316,8 +284,6 @@
       headerRow.innerHTML = IR_VIEWS[modId].headers.map(h => `<th>${h}</th>`).join("");
     } else if (NRF_VIEWS[modId]) {
       headerRow.innerHTML = NRF_VIEWS[modId].headers.map(h => `<th>${h}</th>`).join("");
-    } else if (NFC_VIEWS[modId]) {
-      headerRow.innerHTML = NFC_VIEWS[modId].headers.map(h => `<th>${h}</th>`).join("");
     } else {
       headerRow.innerHTML = `<th>Target / Name</th><th>UUID / Addr</th><th>State / RSSI</th><th>Payload / Status</th>`;
     }

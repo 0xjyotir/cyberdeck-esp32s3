@@ -16,8 +16,7 @@
     { id: "m5",   color: "--m5",   dur: 1750 },
     { id: "ble",  color: "--ble",  dur: 1500 },
     { id: "ir",   color: "--ir",   dur: 1900 },
-    { id: "nrf",  color: "--nrf",  dur: 1600 },
-    { id: "nfc",  color: "--nfc",  dur: 1800 }
+    { id: "nrf",  color: "--nrf",  dur: 1600 }
   ];
 
   function pulse(t, delay) {

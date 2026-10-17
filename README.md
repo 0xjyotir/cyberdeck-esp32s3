@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/images/banner.svg" alt="Cyberdeck ESP32-S3: six signal lines pulsing out of the chip" width="100%">
+  <img src="docs/images/banner.svg" alt="Cyberdeck ESP32-S3: five signal lines pulsing out of the chip" width="100%">
 </p>
 
 <h1 align="center">Cyberdeck · ESP32-S3</h1>
@@ -8,7 +8,7 @@
 
 <p align="center">
   A pocket-size, open-source field deck for wireless and physical security auditing.<br>
-  One ESP32-S3 listens across Wi-Fi, Bluetooth, 2.4&nbsp;GHz, NFC and infrared, and streams every reading to a live browser dashboard.
+  One ESP32-S3 listens across Wi-Fi, Bluetooth, 2.4&nbsp;GHz and infrared, and streams every reading to a live browser dashboard.
 </p>
 
 <p align="center">
@@ -37,7 +37,6 @@ flowchart LR
         WIFI["01 · Wi-Fi"]
         BLE["02 · BLE"]
         NRF["04 · nRF24L01+"]
-        NFC["05 · PN532 NFC"]
         IR["07 · Infrared"]
     end
     Deck -- "USB serial · JSON @ 115200" --> DASH["Browser dashboard<br/>(Web Serial)"]
@@ -54,10 +53,9 @@ The browser sends `{"module": "7.4", "action": "START"}` and the board answers w
 | 02 | **BLE**: scan, GATT services, advertisement capture, custom beacons, GATT explorer, device testing | ESP32-S3 radio | ✅ Firmware + dashboard |
 | 07 | **Infrared**: 38&nbsp;kHz carrier, pulse learning, replay, protocol decode, signal analysis, LED test | 38&nbsp;kHz IR pair (RX GPIO4, TX GPIO5) | 🧪 Firmware + dashboard, hardware testing in progress |
 | 04 | **nRF24**: spectrum scan, packet sniffer, address discovery, protocol analysis, packet storage, lab transmitter (4.1–4.6) | nRF24L01+ (SPI: CE&nbsp;6, CSN&nbsp;7, SCK&nbsp;12, MISO&nbsp;13, MOSI&nbsp;11) | 🧪 Firmware + dashboard, hardware untested |
-| 05 | **NFC**: tag detection, ISO&nbsp;14443A block read, memory structure, NDEF read, dump storage, card emulation (5.1–5.6) | PN532 (I2C: SDA&nbsp;8, SCL&nbsp;9) | 🧪 Firmware + dashboard, hardware untested |
 | — | **Command terminal**: handheld UI and IR blaster | M5StickC Plus2 | ⏳ Planned |
 
-The CC1101 sub-GHz and RDM6300 125&nbsp;kHz modules from the original plan are out of scope for this hardware revision.
+The CC1101 sub-GHz, RDM6300 125&nbsp;kHz and PN532 NFC modules from the original plan are out of scope for this hardware revision.
 
 ## Repository layout
 
@@ -73,13 +71,12 @@ cyberdeck-esp32s3/
 ├── firmware/
 │   ├── unified_firmware/       ⭐ The firmware to flash: every module behind one JSON command loop
 │   ├── 01_wifi/  02_ble/       Standalone sketches, one folder per module (1.1–1.6, 2.1–2.6)
-│   ├── 04_2.4ghz_nrf24/        nRF24 modules 4.1–4.6 (planned)
-│   ├── 05_nfc_pn532/           PN532 modules 5.1–5.6 (planned)
+│   ├── 04_2.4ghz_nrf24/        Standalone nRF24 sketches 4.1–4.6
 │   ├── 07_infrared/            Standalone IR sketches 7.1–7.6
 │   └── 00_integrated_cyberdeck_os/
 ├── hardware/                   3d-models/ · schematics/
 ├── docs/                       Documentation and README images
-├── data_dumps/                 pcap_captures/ · rfid_dumps/
+├── data_dumps/                 pcap_captures/
 └── .github/workflows/          pages.yml: deploys dashboard/ to GitHub Pages
 ```
 
