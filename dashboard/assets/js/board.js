@@ -13,10 +13,11 @@
   // Each trace has a dim base path (already in the SVG) and a bright pulse path.
   const TRACES = [
     { id: "wifi", color: "--wifi", dur: 1700 },
-    { id: "m5",   color: "--m5",   dur: 1750 },
+    { id: "tft",  color: "--tft",  dur: 1750 },
     { id: "ble",  color: "--ble",  dur: 1500 },
     { id: "ir",   color: "--ir",   dur: 1900 },
-    { id: "nrf",  color: "--nrf",  dur: 1600 }
+    { id: "nrf",  color: "--nrf",  dur: 1600 },
+    { id: "rfid", color: "--rfid", dur: 1650 }
   ];
 
   function pulse(t, delay) {

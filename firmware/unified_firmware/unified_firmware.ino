@@ -88,6 +88,14 @@ static const uint8_t NRF_MISO_PIN = 13;
 static const uint8_t NRF_MOSI_PIN = 11;
 // (S3 default FSPI pins. Do NOT use 35/36/37: on octal-PSRAM boards like
 //  N8R8/N16R8 those are wired to the PSRAM and are unusable.)
+//
+// RESERVED for hardware that has no firmware yet (proposed wiring, untested;
+// listed here so new modules don't collide with it):
+// RC522 RFID (SPI, shares the nRF24 bus SCK 12 / MISO 13 / MOSI 11):
+//   SDA(SS) = GPIO10, RST = GPIO9, IRQ unused, VCC 3.3 V only.
+// 2.8" ILI9341 TFT + XPT2046 touch (own SPI bus):
+//   SCK 21, MOSI 18, MISO 47, CS 15, DC 16, RST 17, LED(backlight) 8,
+//   T_CS 1, T_IRQ 2 (touch shares the TFT's SCK/MOSI/MISO).
 
 static const uint16_t IR_CAPTURE_BUFFER_SIZE = 1024;
 static const uint8_t  IR_TIMEOUT = 15;  // ms of silence that ends a capture

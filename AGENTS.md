@@ -18,11 +18,12 @@ ESP32-S3 runs a single "unified firmware" that exposes several auditing modules
 (Wi-Fi, BLE, nRF24 and infrared). A **browser dashboard**
 talks to the board over **USB Web Serial** and drives those modules live.
 
-The long-term hardware vision is a dual-node design: the ESP32-S3 core engine
-plus an **M5StickC Plus2** handheld command terminal (its own screen, buttons,
-battery, IR LED) talking to the core over UART / ESP-NOW. The M5Stick terminal
-firmware is **not built yet** — today everything is driven from the browser
-dashboard over USB.
+The hardware vision is a single self-contained deck: the ESP32-S3 plus a
+**2.8" SPI TFT touchscreen** (assumed ILI9341 240×320 + XPT2046 touch) for
+picking modules and reading their output without a laptop, and an **RC522
+13.56 MHz RFID reader**. The earlier plan for an M5StickC Plus2 command terminal
+is **dropped**. Neither the TFT UI nor the RC522 modules have firmware yet —
+today everything is driven from the browser dashboard over USB.
 
 ### Ethical scope (do not ignore)
 This is defensive / educational security tooling. Only ever add capabilities
@@ -113,6 +114,10 @@ Single-file Arduino sketch. Structure, top to bottom:
   - IR receiver `IR_RX_PIN = GPIO4`, IR transmitter `IR_TX_PIN = GPIO5`.
     GPIO4/5 are plain GPIOs on the S3 (not strapping, not USB, not flash/PSRAM).
   - nRF24 SPI `CE=6 CSN=7 SCK=12 MISO=13 MOSI=11`.
+  - **Reserved, proposed (no firmware yet):** RC522 on the nRF24 SPI bus with
+    `SS=10 RST=9` (3.3 V only, IRQ unused); TFT on its own SPI bus
+    `SCK=21 MOSI=18 MISO=47 CS=15 DC=16 RST=17 LED=8`, touch `T_CS=1 T_IRQ=2`.
+    Listed as comments in the firmware pin map so nothing else takes them.
   - ⚠️ **Never use GPIO35/36/37** — on octal-PSRAM boards (N8R8 / N16R8) those
     pins are wired to the PSRAM and are unusable.
 - **Global state** — `activeModule` (a `String` like `"1.1"`, or `"NONE"`),
@@ -217,8 +222,11 @@ self-test transmitter for a node you own — not for injecting into other device
 Each standalone sketch also lives under `firmware/04_2.4ghz_nrf24/4.x_*/`.
 
 ### Not implemented yet (folders exist, logic does not)
-- **M5StickC Plus2 command terminal** firmware (screen UI, buttons, IR blaster,
-  ESP-NOW telemetry render).
+- **2.8" TFT on-deck UI** (module menu via touch, live output view). Must keep
+  `loop()` non-blocking: redraw in small `millis()`-gated steps.
+- **RC522 RFID (subsystem 5)** — hardware in hand, modules not chosen yet. Use
+  the MFRC522 library; scope is reading/inspecting cards the operator owns.
+- The **M5StickC Plus2** terminal is dropped; don't build for it.
 - **CC1101 sub-GHz**, **RDM6300 125 kHz RFID** and **PN532 NFC** are **out of
   scope** for this hardware revision — do not re-add them. (PN532 was removed
   after the test board turned out faulty.)
@@ -232,8 +240,12 @@ Serial API; unavailable in Firefox/Safari). It talks only to the board on the
 user's own machine — nothing is sent to any server.
 
 - `index.html` — welcome/landing page. Hero is an animated schematic ESP32-S3
-  board (`assets/js/board.js`, using vendored anime.js) with five pulsing signal
-  lines: Wi-Fi, M5StickC Plus2, BLE, NRF24, IR. Below the subsystem cards is
+  board (`assets/js/board.js`, using vendored anime.js) with six pulsing signal
+  lines: Wi-Fi, 2.8" TFT, BLE, NRF24, IR, RC522 RFID. Six subsystem cards
+  (Wi-Fi, BLE, IR, nRF24, RFID, on-deck screen) sit in an even 3×2 grid, with
+  "The point" as a full-width strip (`.card-wide`) beneath them; keep the count
+  at six so the grid stays even. RFID also has a "not implemented yet" group in
+  the field manual. Below the subsystem cards is
   **the field manual** (`#guide`): a per-function reference for all 24 implemented
   functions, grouped by subsystem as native `<details>` accordions. Each entry
   explains what the function does, defines every telemetry `data` field, shows an
@@ -276,7 +288,7 @@ user's own machine — nothing is sent to any server.
 `Anthropic Sans` with **Hanken Grotesk** fallback (Anthropic Sans isn't publicly
 licensed so it can't be bundled — Hanken Grotesk is what actually loads, via
 Google Fonts). Serial console stays **monospace** (JetBrains Mono, `--code`).
-Hero board = dashed schematic with five pulsing lines, **no antenna rings/
+Hero board = dashed schematic with six pulsing lines, **no antenna rings/
 squiggles**. The dashboard **layout** must stay as-is — restyle only, don't
 re-architect it.
 
@@ -335,7 +347,7 @@ These are firm — follow them unless the owner says otherwise:
 
 ---
 
-## 10. Current state & what's next (as of the IR-testing phase)
+## 10. Current state & what's next (as of the IR-testing + RFID/TFT planning phase)
 
 **Done:** Wi-Fi (1.1–1.6) and BLE (2.1–2.6) implemented and tested; IR (7.1–7.6)
 implemented in firmware + dashboard but **not yet tested on hardware**; dashboard
@@ -350,8 +362,10 @@ TX LED on GPIO5.
 - nRF24 (subsystem 4): all six modules (4.1–4.6) are implemented in the unified
   firmware + dashboard and as standalone sketches (hardware-untested, SPI `CE=6
   CSN=7 SCK=12 MISO=13 MOSI=11`). Needs flashing + an nRF24L01+ to verify.
-- Build the M5StickC Plus2 command-terminal firmware (screen UI + ESP-NOW/UART
-  link to the core).
+- RC522 RFID (subsystem 5): pick the six modules, then build them into the
+  unified firmware + dashboard + standalone sketches.
+- Build the 2.8" TFT on-deck UI (module menu + output view) in the unified
+  firmware.
 
 For a longer, narrative history of decisions and milestones, see the project
 documentation files kept with the project (context/architecture + progress/
