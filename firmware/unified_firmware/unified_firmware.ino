@@ -1,7 +1,8 @@
 /*
  * Cyberdeck ESP32-S3 — Unified Firmware
  * ----------------------------------------------------------------
- * Merges: 01_wifi (1.1-1.6), 02_ble (2.1-2.6), 07_infrared (7.1-7.6)
+ * Merges: 01_wifi (1.1-1.6), 02_ble (2.1-2.6), 04_2.4ghz_nrf24 (4.1-4.6),
+ *         05_nfc_pn532 (5.1-5.6), 07_infrared (7.1-7.6)
  *
  * IR module IDs follow firmware/07_infrared/7.1-7.6:
  *   7.1 38khz_modulation   — continuous 38kHz carrier on TX (LEDC)
@@ -31,6 +32,8 @@
  *           7.3 / 7.4 only.
  *           RF24              (Library Manager -> "RF24" by TMRh20) —
  *           needed for the 2.4GHz nRF24 modules (4.x).
+ *           Adafruit PN532 + Adafruit BusIO (Library Manager) —
+ *           needed for the PN532 NFC modules (5.x).
  *
  * NON-BLOCKING NOTES (read this before adding more modules):
  *   - All module polling is gated by millis(), not delay(). The
@@ -69,6 +72,8 @@
 #include <IRutils.h>
 #include <SPI.h>
 #include <RF24.h>
+#include <Wire.h>
+#include <Adafruit_PN532.h>
 
 // ===================================================================
 // PIN MAP (defaults — remap here if your wiring differs)
@@ -88,8 +93,11 @@ static const uint8_t NRF_MOSI_PIN = 11;
 // (S3 default FSPI pins. Do NOT use 35/36/37: on octal-PSRAM boards like
 //  N8R8/N16R8 those are wired to the PSRAM and are unusable.)
 //
-// Reserved for the next module set (not used yet):
-//   PN532     (I2C)  SDA=GPIO8 SCL=GPIO9  (keep off the nRF24 SPI bus)
+// PN532 NFC (I2C) — modules 5.x
+static const uint8_t PN532_SDA_PIN = 8;
+static const uint8_t PN532_SCL_PIN = 9;
+// (I2C bus, kept off the nRF24 SPI pins. Wire the breakout in I2C mode:
+//  SDA->GPIO8, SCL->GPIO9, VCC->3.3V, GND->GND, RSTPDN->3.3V.)
 
 static const uint16_t IR_CAPTURE_BUFFER_SIZE = 1024;
 static const uint8_t  IR_TIMEOUT = 15;  // ms of silence that ends a capture
@@ -154,6 +162,27 @@ uint8_t nrfRing[NRF_RING_SIZE][32];                      // 4.5 in-RAM capture s
 uint8_t nrfRingHead = 0;
 unsigned long nrfStored = 0;
 
+// --- PN532 NFC (modules 5.x) ---
+// Educational / authorized-lab NFC diagnostics, same scope as the other
+// subsystems: only read/profile tags and cards you own or may test.
+Adafruit_PN532 nfc(-1, -1, &Wire);     // I2C; IRQ/RESET unused (RSTPDN tied high)
+bool pn532Ready = false;               // ensurePn532() succeeded once
+static const uint16_t NFC_READ_TIMEOUT = 120;   // ms per readPassiveTargetID (bounded)
+static const uint8_t  NFC_CLASSIC_BLOCKS = 64;  // MIFARE Classic 1K
+static const uint8_t  NFC_UL_PAGES       = 44;  // Ultralight/NTAG pages to walk
+static const uint8_t  NFC_UL_NDEF_PAGES  = 135; // user area to scan for an NDEF message
+uint8_t NFC_DEFAULT_KEY[6] = { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };  // factory key A
+// Progress/edge state shared by the one-active-at-a-time 5.x modules.
+String  nfcLastUid = "";               // 5.1/5.2/5.3/5.5 tag-change edge tracking
+bool    nfcTagPresent = false;         // 5.1 present/removed edge
+uint8_t nfcUidLen = 0;                 // UID length of the card being walked
+uint8_t nfcUid[7] = {0};               // UID of the card being walked
+int     nfcWalkBlock = -1;             // 5.2/5.5 current block/page (-1 = idle, waiting for a tag)
+uint8_t nfcUidIsClassic = 0;           // 1 = walk as Classic, 0 = Ultralight/NTAG
+unsigned long nfcStored = 0;           // 5.5 running captured-block count
+bool    nfcEmuSelected = false;        // 5.6 waiting->selected edge
+const char* NFC_DEMO_UID = "08DEMO01"; // 5.6 fixed demo identity (never a cloned card)
+
 JsonDocument telemetryDoc;
 
 // ===================================================================
@@ -182,6 +211,186 @@ bool ensureNrf() {
   if (!radio.begin() || !radio.isChipConnected()) return false;
   nrfReady = true;
   return true;
+}
+
+// ===================================================================
+// PN532 INIT + HELPERS — lazy one-time bring-up; reports if missing
+// ===================================================================
+bool ensurePn532() {
+  if (pn532Ready) return true;
+  Wire.begin(PN532_SDA_PIN, PN532_SCL_PIN);
+  nfc.begin();
+  if (!nfc.getFirmwareVersion()) return false;   // 0 => no reader on the I2C bus
+  nfc.SAMConfig();                                // normal reader mode
+  pn532Ready = true;
+  return true;
+}
+
+String nfcBytesToHex(const uint8_t* b, uint8_t len) {
+  String s;
+  for (uint8_t i = 0; i < len; i++) { if (b[i] < 0x10) s += '0'; s += String(b[i], HEX); }
+  s.toUpperCase();
+  return s;
+}
+
+// Card family guess from UID length (true ATQA/SAK needs a lower-level exchange;
+// length separates the common families well enough for the dashboard).
+const char* nfcGuessType(uint8_t len) {
+  if (len == 4)  return "MIFARE 1K/4K or NTAG (4-byte UID)";
+  if (len == 7)  return "Ultralight/NTAG21x or DESFire (7-byte UID)";
+  if (len == 10) return "ISO 14443A (10-byte UID)";
+  return "ISO 14443A tag";
+}
+
+// 5.2 block read / 5.5 dump: one block/page per call so loop() stays responsive
+// instead of reading a whole card in one pass. Idle (nfcWalkBlock == -1) until a
+// tag is presented, then walks it block-by-block. `dump` picks the 5.5 shape and
+// its running count. On a MIFARE Classic auth failure the card halts, so we
+// re-select it before skipping the locked sector — otherwise every later sector
+// would wrongly read as locked too.
+void nfcStepWalk(const char* module, bool dump) {
+  unsigned long now = millis();
+
+  if (nfcWalkBlock == -1) {               // idle: look for a tag every ~300ms
+    if (now - moduleActionMillis < 300) return;
+    moduleActionMillis = now;
+    uint8_t uid[7]; uint8_t len = 0;
+    if (nfc.readPassiveTargetID(PN532_MIFARE_ISO14443A, uid, &len, NFC_READ_TIMEOUT) && len > 0) {
+      String hex = nfcBytesToHex(uid, len);
+      if (hex != nfcLastUid) {            // new card → start a fresh walk
+        nfcLastUid = hex;
+        memcpy(nfcUid, uid, len); nfcUidLen = len;
+        nfcUidIsClassic = (len == 4) ? 1 : 0;
+        nfcWalkBlock = 0;
+      }
+    } else {
+      nfcLastUid = "";                    // field empty: allow a re-present to walk again
+    }
+    return;
+  }
+
+  if (now - moduleStateMillis < 15) return;   // ~one block per 15ms pass
+  moduleStateMillis = now;
+
+  int block = nfcWalkBlock;
+  String hex = "";
+  bool ok = false;
+
+  if (nfcUidIsClassic) {
+    if (block % 4 == 0 &&
+        !nfc.mifareclassic_AuthenticateBlock(nfcUid, nfcUidLen, block, 0, NFC_DEFAULT_KEY)) {
+      // Sector locked with the default key: re-select the halted card, skip it.
+      uint8_t u[7]; uint8_t l = 0;
+      nfc.readPassiveTargetID(PN532_MIFARE_ISO14443A, u, &l, NFC_READ_TIMEOUT);
+      nfcWalkBlock = block + 4;
+    } else {
+      uint8_t data[16];
+      if (nfc.mifareclassic_ReadDataBlock(block, data)) { ok = true; hex = nfcBytesToHex(data, 16); }
+      nfcWalkBlock++;
+    }
+    if (nfcWalkBlock >= NFC_CLASSIC_BLOCKS) nfcWalkBlock = -1;
+  } else {
+    uint8_t data[4];
+    if (nfc.mifareultralight_ReadPage(block, data)) { ok = true; hex = nfcBytesToHex(data, 4); nfcWalkBlock++; }
+    else nfcWalkBlock = -1;                // past end of memory
+    if (nfcWalkBlock >= NFC_UL_PAGES) nfcWalkBlock = -1;
+  }
+
+  if (dump) {
+    if (ok) nfcStored++;
+    telemetryDoc["data"]["stored"] = nfcStored;
+    telemetryDoc["data"]["block"]  = block;
+    telemetryDoc["data"]["data"]   = hex;
+  } else {
+    telemetryDoc["data"]["block"]  = block;
+    telemetryDoc["data"]["data"]   = hex;
+    telemetryDoc["data"]["ok"]     = ok;
+  }
+  emitTelemetry(module, "ok");
+
+  if (nfcWalkBlock == -1) nfcLastUid = "";  // finished: a re-present can walk again
+}
+
+// 5.3: fill the card's layout fields from UID length + a couple of probes.
+void nfcDescribe(uint8_t* uid, uint8_t len, String& type, int& sectors, int& blocks, long& bytes) {
+  if (len == 4) {
+    bool is4k = nfc.mifareclassic_AuthenticateBlock(uid, len, 64, 0, NFC_DEFAULT_KEY);
+    if (is4k) { type = "MIFARE Classic 4K"; sectors = 40; blocks = 256; bytes = 4096; }
+    else      { type = "MIFARE Classic 1K"; sectors = 16; blocks = 64;  bytes = 1024; }
+    return;
+  }
+  if (len == 7) {
+    int pages = 0;
+    for (uint8_t p = 0; p < 231; p++) { uint8_t d[4]; if (!nfc.mifareultralight_ReadPage(p, d)) break; pages++; }
+    sectors = 0; blocks = pages; bytes = (long)pages * 4;
+    if      (pages >= 200) type = "NTAG216 (~888 user bytes)";
+    else if (pages >= 120) type = "NTAG215 (~504 user bytes)";
+    else if (pages >= 40)  type = "NTAG213 (~144 user bytes)";
+    else                   type = "Ultralight / NTAG";
+    return;
+  }
+  type = "ISO 14443A tag"; sectors = 0; blocks = 0; bytes = 0;
+}
+
+// NFC Forum URI record prefix abbreviations (index 0x00..).
+const char* NFC_URI_PREFIX[] = {
+  "", "http://www.", "https://www.", "http://", "https://", "tel:", "mailto:",
+  "ftp://anonymous:anonymous@", "ftp://ftp.", "ftps://", "sftp://", "smb://",
+  "nfs://", "ftp://", "dav://", "news:", "telnet://", "imap:", "rtsp://",
+  "urn:", "pop:", "sip:", "sips:", "tftp:", "btspp://"
+};
+const uint8_t NFC_URI_PREFIX_N = sizeof(NFC_URI_PREFIX) / sizeof(NFC_URI_PREFIX[0]);
+
+// 5.4 (read-only): parse the first NDEF record out of an NTAG/Ultralight. One
+// bounded read per tag presentation (a few hundred page reads worst case —
+// treated like the BLE connect() bounded exception, edge-triggered per tag).
+int nfcReadNdef(int& tnf, String& type, String& payload) {
+  static uint8_t mem[NFC_UL_NDEF_PAGES * 4];
+  uint16_t n = 0;
+  for (uint8_t page = 4; page < NFC_UL_NDEF_PAGES && n + 4 <= sizeof(mem); page++) {
+    uint8_t d[4];
+    if (!nfc.mifareultralight_ReadPage(page, d)) break;   // past end of memory
+    memcpy(mem + n, d, 4); n += 4;
+  }
+  uint16_t i = 0;
+  while (i < n) {
+    uint8_t t = mem[i++];
+    if (t == 0x00) continue;             // NULL TLV
+    if (t == 0xFE) break;                // Terminator TLV
+    if (i >= n) break;
+    uint16_t len = mem[i++];
+    if (len == 0xFF) { if (i + 1 >= n) break; len = (mem[i] << 8) | mem[i + 1]; i += 2; }
+    if (t == 0x03) {                     // NDEF message TLV → parse its first record
+      if (i >= n) break;
+      uint8_t hdr = mem[i++]; tnf = hdr & 0x07; bool sr = hdr & 0x10;
+      if (i >= n) break;
+      uint8_t typeLen = mem[i++];
+      uint32_t payLen = 0;
+      if (sr) payLen = mem[i++];
+      else { payLen = ((uint32_t)mem[i] << 24) | ((uint32_t)mem[i+1] << 16) | (mem[i+2] << 8) | mem[i+3]; i += 4; }
+      if (hdr & 0x08) i++;               // skip ID length byte
+      String rtype;
+      for (uint8_t k = 0; k < typeLen && i < n; k++) rtype += char(mem[i++]);
+      String out;
+      if (rtype == "U" && payLen > 0 && i < n) {
+        uint8_t code = mem[i++]; payLen--;
+        if (code < NFC_URI_PREFIX_N) out += NFC_URI_PREFIX[code];
+        for (uint32_t k = 0; k < payLen && i < n; k++) out += char(mem[i++]);
+      } else if (rtype == "T" && payLen > 0 && i < n) {
+        uint8_t status = mem[i++]; payLen--;
+        uint8_t langLen = status & 0x3F;
+        for (uint8_t k = 0; k < langLen && i < n && payLen; k++) { i++; payLen--; }
+        for (uint32_t k = 0; k < payLen && i < n; k++) out += char(mem[i++]);
+      } else {
+        for (uint32_t k = 0; k < payLen && i < n; k++) { if (mem[i] < 0x10) out += '0'; out += String(mem[i++], HEX); }
+        out.toUpperCase();
+      }
+      type = rtype; payload = out;
+      return 0;
+    }
+    i += len;                            // not NDEF — skip this TLV's value
+  }
+  return -1;
 }
 
 // ===================================================================
@@ -339,6 +548,15 @@ void startModule(const String& module) {
     radio.openWritingPipe(NRF_TEST_ADDR);
     radio.stopListening();
     nrfSent = 0;
+  } else if (module == "5.1" || module == "5.2" || module == "5.3" ||
+             module == "5.4" || module == "5.5" || module == "5.6") {
+    // All PN532 modules share one lazy bring-up; 5.1 doubles as the wiring check.
+    if (!ensurePn532()) { emitError(module.c_str(), "pn532_not_found"); activeModule = "NONE"; return; }
+    nfcLastUid = "";
+    nfcTagPresent = false;
+    nfcWalkBlock = -1;        // idle until a tag is presented (5.2 / 5.5)
+    nfcStored = 0;
+    nfcEmuSelected = false;
   } else if (module == "7.1") {
     if (!ledcAttach(IR_TX_PIN, IR_CARRIER_HZ, IR_CARRIER_RES_BITS)) {
       emitError("7.1", "ledc_attach_failed");
@@ -389,6 +607,9 @@ void stopModule() {
     WiFi.scanDelete();
     wifiScanState = WSCAN_IDLE;
   }
+  // PN532 (5.x) needs no hardware teardown — it idles until the next START.
+
+
 
   telemetryDoc["data"]["msg"] = "module_halted";
   emitTelemetry(activeModule.c_str(), "ok");
@@ -776,6 +997,113 @@ void loop() {
       telemetryDoc["data"]["sent"] = nrfSent;
       telemetryDoc["data"]["ack"] = ack;
       emitTelemetry("4.6", "ok");
+    }
+  }
+
+  // --- PN532 NFC SUBSYSTEM (5.x) ---
+  // 5.1 detection: poll for a tag, report UID + type on arrival/removal.
+  else if (activeModule == "5.1") {
+    if (now - moduleActionMillis >= 300) {
+      moduleActionMillis = now;
+      uint8_t uid[7]; uint8_t len = 0;
+      bool found = nfc.readPassiveTargetID(PN532_MIFARE_ISO14443A, uid, &len, NFC_READ_TIMEOUT);
+      if (found && len > 0) {
+        String hex = nfcBytesToHex(uid, len);
+        if (!nfcTagPresent || hex != nfcLastUid) {
+          nfcTagPresent = true; nfcLastUid = hex;
+          telemetryDoc["data"]["uid"] = hex;
+          telemetryDoc["data"]["uid_len"] = len;
+          telemetryDoc["data"]["type"] = nfcGuessType(len);
+          emitTelemetry("5.1", "ok");
+        }
+      } else if (nfcTagPresent) {
+        nfcTagPresent = false; nfcLastUid = "";
+        telemetryDoc["data"]["uid"] = "";
+        telemetryDoc["data"]["type"] = "removed";
+        emitTelemetry("5.1", "ok");
+      }
+    }
+  }
+  // 5.2 block read: walk the card one block/page per pass (default key A).
+  else if (activeModule == "5.2") {
+    nfcStepWalk("5.2", false);
+  }
+  // 5.3 memory structure: one layout probe per presented tag.
+  else if (activeModule == "5.3") {
+    if (now - moduleActionMillis >= 300) {
+      moduleActionMillis = now;
+      uint8_t uid[7]; uint8_t len = 0;
+      if (nfc.readPassiveTargetID(PN532_MIFARE_ISO14443A, uid, &len, NFC_READ_TIMEOUT) && len > 0) {
+        String hex = nfcBytesToHex(uid, len);
+        if (hex != nfcLastUid) {
+          nfcLastUid = hex;
+          String type; int sectors = 0, blocks = 0; long bytes = 0;
+          nfcDescribe(uid, len, type, sectors, blocks, bytes);
+          telemetryDoc["data"]["uid"] = hex;
+          telemetryDoc["data"]["type"] = type;
+          telemetryDoc["data"]["sectors"] = sectors;
+          telemetryDoc["data"]["blocks"] = blocks;
+          telemetryDoc["data"]["bytes"] = bytes;
+          emitTelemetry("5.3", "ok");
+        }
+      } else {
+        nfcLastUid = "";
+      }
+    }
+  }
+  // 5.4 NDEF read: parse the first record off an NTAG/Ultralight (read-only
+  // here; writing stays a compile-time option in the standalone sketch).
+  else if (activeModule == "5.4") {
+    if (now - moduleActionMillis >= 300) {
+      moduleActionMillis = now;
+      uint8_t uid[7]; uint8_t len = 0;
+      if (nfc.readPassiveTargetID(PN532_MIFARE_ISO14443A, uid, &len, NFC_READ_TIMEOUT) && len > 0) {
+        String hex = nfcBytesToHex(uid, len);
+        if (hex != nfcLastUid) {
+          nfcLastUid = hex;
+          telemetryDoc["data"]["action"] = "read";
+          if (len != 7) {
+            telemetryDoc["data"]["record"] = -1;
+            telemetryDoc["data"]["type"] = "";
+            telemetryDoc["data"]["payload"] = "present a 7-byte-UID NTAG/Ultralight";
+          } else {
+            int tnf = -1; String type, payload;
+            int rec = nfcReadNdef(tnf, type, payload);
+            telemetryDoc["data"]["record"] = rec;
+            if (tnf >= 0) telemetryDoc["data"]["tnf"] = tnf;
+            telemetryDoc["data"]["type"] = type;
+            telemetryDoc["data"]["payload"] = rec < 0 ? "no NDEF message" : payload;
+          }
+          emitTelemetry("5.4", "ok");
+        }
+      } else {
+        nfcLastUid = "";
+      }
+    }
+  }
+  // 5.5 dump storage: same walk as 5.2 with a running captured-block count.
+  else if (activeModule == "5.5") {
+    nfcStepWalk("5.5", true);
+  }
+  // 5.6 card emulation: one bounded AsTarget() attempt per pass (fixed demo
+  // identity only — never a cloned card). Bounded ~1s like the BLE connect case.
+  else if (activeModule == "5.6") {
+    if (now - moduleActionMillis >= 200) {
+      moduleActionMillis = now;
+      uint8_t selected = nfc.AsTarget();
+      if (selected && !nfcEmuSelected) {
+        nfcEmuSelected = true;
+        telemetryDoc["data"]["uid"] = NFC_DEMO_UID;
+        telemetryDoc["data"]["mode"] = "ISO14443A target";
+        telemetryDoc["data"]["status"] = "selected by reader";
+        emitTelemetry("5.6", "ok");
+      } else if (!selected && nfcEmuSelected) {
+        nfcEmuSelected = false;
+        telemetryDoc["data"]["uid"] = NFC_DEMO_UID;
+        telemetryDoc["data"]["mode"] = "ISO14443A target";
+        telemetryDoc["data"]["status"] = "waiting for reader";
+        emitTelemetry("5.6", "ok");
+      }
     }
   }
 
