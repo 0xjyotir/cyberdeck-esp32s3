@@ -105,7 +105,7 @@
       </div>
       <div class="spec">
         <span><b>ESP32-S3</b> N16R8</span>
-        <span><b>4</b> subsystems</span>
+        <span><b>5</b> subsystems</span>
         <span><b>115200</b> baud serial</span>
         <span><b>~&#8377;3,330</b> build</span>
       </div>
@@ -113,8 +113,8 @@
   </header>
 
   <div class="strip"><div class="wrap">
-    <div class="stat"><div class="n" data-to="24">24</div><div class="l">Live modules, one firmware</div></div>
-    <div class="stat"><div class="n" data-to="4">4</div><div class="l">Radio &amp; optical subsystems</div></div>
+    <div class="stat"><div class="n" data-to="30">30</div><div class="l">Live modules, one firmware</div></div>
+    <div class="stat"><div class="n" data-to="5">5</div><div class="l">Radio &amp; optical subsystems</div></div>
     <div class="stat"><div class="n" data-to="6">6</div><div class="l">Infrared tools, scope-tested</div></div>
     <div class="stat"><div class="n" data-to="1">1</div><div class="l">USB cable to run it all</div></div>
   </div></div>
@@ -122,14 +122,14 @@
   <section class="facts wrap" id="facts">
     <div class="head">
       <p class="eyebrow">The subsystems</p>
-      <h2>One state machine, four ways to read the room.</h2>
+      <h2>One state machine, five ways to read the room.</h2>
     </div>
     <div class="grid">
       <article class="card c-wifi reveal"><span class="bar-line"></span><div class="k">01 · Wi-Fi</div><h3>802.11 recon</h3><p>Scan airspace, log access points and walk raw management frames in promiscuous mode.</p></article>
       <article class="card c-ble reveal"><span class="bar-line"></span><div class="k">02 · BLE</div><h3>Bluetooth LE</h3><p>Enumerate GATT services, read live characteristic values and verify custom beacons.</p></article>
       <article class="card c-ir reveal"><span class="bar-line"></span><div class="k">07 · Infrared</div><h3>38&nbsp;kHz optical</h3><p>Learn a remote's mark/space timing, decode NEC &amp; Sony, then replay it back. Tomorrow's demo.</p></article>
       <article class="card c-nrf reveal"><span class="bar-line"></span><div class="k">04 · nRF24</div><h3>2.4&nbsp;GHz</h3><p>Sweep the band and watch for low-power transceiver traffic. Hardware stage, coming online.</p></article>
-      <article class="card c-rfid reveal"><span class="bar-line"></span><div class="k">05 · RFID</div><h3>13.56&nbsp;MHz</h3><p>Read and inspect your own MIFARE cards and tags with the RC522. Hardware in hand, firmware next.</p></article>
+      <article class="card c-rfid reveal"><span class="bar-line"></span><div class="k">05 · RFID</div><h3>13.56&nbsp;MHz</h3><p>Fingerprint, dump and audit your own MIFARE cards and tags with the RC522 — now live in the firmware and dashboard.</p></article>
       <article class="card c-tft reveal"><span class="bar-line"></span><div class="k">On-deck screen</div><h3>2.8&Prime; touchscreen</h3><p>A built-in TFT for picking modules and reading their output away from a laptop. Firmware planned.</p></article>
       <article class="card card-wide reveal"><span class="bar-line"></span>
         <div class="cw-head"><div class="k">The point</div><h3>It all lands here</h3></div>
@@ -143,7 +143,7 @@
     <div class="head">
       <p class="eyebrow">The field manual</p>
       <h2>Every function, explained &mdash; and the exact code behind it.</h2>
-      <p class="guide-lede">A full reference for all 24 functions implemented across the four subsystems: what each one does, what every field of its telemetry means, a sample of the live output, and a link straight to that function&rsquo;s own standalone <code>.ino</code> sketch on GitHub. Tap any row to open it.</p>
+      <p class="guide-lede">A full reference for all 30 functions implemented across the five subsystems: what each one does, what every field of its telemetry means, a sample of the live output, and a link straight to that function&rsquo;s own standalone <code>.ino</code> sketch on GitHub. Tap any row to open it.</p>
     </div>
     <div class="guide-wrap">
       <div class="guide-group c-wifi">
@@ -706,7 +706,147 @@
           <h3>RFID · RC522</h3>
         </div>
         <div class="guide-list">
-          <p class="guide-note">The RC522 13.56&nbsp;MHz reader is on the bench but its functions are <strong>not implemented yet</strong>. They&rsquo;ll land here, each with its own standalone sketch, once they&rsquo;re in the unified firmware.</p>
+          <p class="guide-note">The RC522 13.56&nbsp;MHz reader is live in the unified firmware and dashboard. Everything here is for cards and tags you <strong>own or are authorized to test</strong>. Cloning (5.4) and NDEF writing (5.5) are gated off in firmware by default.</p>
+        <details class="guide-item">
+          <summary>
+            <span class="gi-id">5.1</span>
+            <span class="gi-name">Card fingerprint</span>
+            <span class="gi-caret" aria-hidden="true">+</span>
+          </summary>
+          <div class="gi-body">
+            <p class="gi-what">Detects any ISO-14443A card in the field and reports its UID, ATQA and SAK plus a derived human-readable card type. This is the foundation every other RFID module builds on, and it doubles as the &ldquo;is the RC522 wired up?&rdquo; check &mdash; if the reader never answers it emits <code>rc522_not_found</code>. A card&rsquo;s UID is broadcast in the clear to anything that energises the field, which is exactly why UID-only access control is weak.</p>
+            <p class="gi-sub">What the output means</p>
+            <dl class="gi-fields">
+              <div class="fld"><dt>uid</dt><dd>The card&rsquo;s unique identifier as hex (e.g. <code>DEADBEEF</code>).</dd></div>
+              <div class="fld"><dt>uid_len</dt><dd>UID length in bytes &mdash; 4, 7 or 10.</dd></div>
+              <div class="fld"><dt>atqa</dt><dd>Answer-to-request, the 2-byte type hint returned when the card wakes.</dd></div>
+              <div class="fld"><dt>sak</dt><dd>Select acknowledge byte &mdash; the RC522 maps it to the card family.</dd></div>
+              <div class="fld"><dt>type</dt><dd>Derived card type (e.g. <code>MIFARE 1KB</code>, <code>MIFARE Ultralight</code>, <code>MIFARE DESFire</code>).</dd></div>
+            </dl>
+            <p class="gi-sub">Example telemetry</p>
+            <pre class="gi-ex"><code>{&quot;module&quot;:&quot;5.1&quot;,&quot;status&quot;:&quot;ok&quot;,&quot;data&quot;:{&quot;uid&quot;:&quot;DEADBEEF&quot;,&quot;uid_len&quot;:4,&quot;atqa&quot;:&quot;0004&quot;,&quot;sak&quot;:&quot;08&quot;,&quot;type&quot;:&quot;MIFARE 1KB&quot;}}</code></pre>
+            <a class="gi-src" href="https://github.com/RRonium/cyberdeck-esp32s3/blob/main/firmware/05_rfid_rc522/5.1_card_fingerprint/card_fingerprint/card_fingerprint.ino" target="_blank" rel="noopener">
+              View this module&rsquo;s <code>.ino</code> source <span class="arrow">&rarr;</span>
+            </a>
+          </div>
+        </details>
+        <details class="guide-item">
+          <summary>
+            <span class="gi-id">5.2</span>
+            <span class="gi-name">Memory dump</span>
+            <span class="gi-caret" aria-hidden="true">+</span>
+          </summary>
+          <div class="gi-body">
+            <p class="gi-what">Reads out the actual contents of a presented card. For a MIFARE Classic it authenticates each sector with the factory default key (<code>FFFFFFFFFFFF</code>) and dumps every readable block as hex; for Ultralight / NTAG it reads the pages directly. This module only <strong>reads</strong> &mdash; it never writes. Blocks that refuse the default key show up as locked, a hint that something there is actually protected.</p>
+            <p class="gi-sub">What the output means</p>
+            <dl class="gi-fields">
+              <div class="fld"><dt>sector</dt><dd>Which sector the block belongs to.</dd></div>
+              <div class="fld"><dt>block</dt><dd>The absolute block number being reported.</dd></div>
+              <div class="fld"><dt>data</dt><dd>The 16 bytes of that block as hex (present only when auth succeeded).</dd></div>
+              <div class="fld"><dt>key_used</dt><dd>The key that opened the sector &mdash; here the default <code>FFFFFFFFFFFF</code>.</dd></div>
+              <div class="fld"><dt>auth</dt><dd><code>ok</code> if the sector opened, <code>fail</code> if the default key was rejected (block shown as locked).</dd></div>
+              <div class="fld"><dt>blocks_read / blocks_locked / done</dt><dd>The closing summary row: how many blocks were read, how many were locked, and that the dump finished.</dd></div>
+            </dl>
+            <p class="gi-sub">Example telemetry</p>
+            <pre class="gi-ex"><code>{&quot;module&quot;:&quot;5.2&quot;,&quot;status&quot;:&quot;ok&quot;,&quot;data&quot;:{&quot;sector&quot;:1,&quot;block&quot;:4,&quot;data&quot;:&quot;00112233445566778899AABBCCDDEEFF&quot;,&quot;key_used&quot;:&quot;FFFFFFFFFFFF&quot;,&quot;auth&quot;:&quot;ok&quot;}}</code></pre>
+            <a class="gi-src" href="https://github.com/RRonium/cyberdeck-esp32s3/blob/main/firmware/05_rfid_rc522/5.2_memory_dump/memory_dump/memory_dump.ino" target="_blank" rel="noopener">
+              View this module&rsquo;s <code>.ino</code> source <span class="arrow">&rarr;</span>
+            </a>
+          </div>
+        </details>
+        <details class="guide-item">
+          <summary>
+            <span class="gi-id">5.3</span>
+            <span class="gi-name">Default-key security audit</span>
+            <span class="gi-caret" aria-hidden="true">+</span>
+          </summary>
+          <div class="gi-body">
+            <p class="gi-what">Runs a presented MIFARE Classic card against a dictionary of common / factory / transport keys and reports, per sector, whether it fell to a default key or held &mdash; then grades the whole card A&ndash;F. It answers &ldquo;would this badge survive a 10-second attack?&rdquo;. It is pure read / auth: nothing is written and no data is dumped, only which key opened each sector. Sectors that resist the whole dictionary are reported <code>protected</code>.</p>
+            <p class="gi-sub">What the output means</p>
+            <dl class="gi-fields">
+              <div class="fld"><dt>sector</dt><dd>The sector being tested.</dd></div>
+              <div class="fld"><dt>result</dt><dd><code>default_key</code> if a dictionary key opened it, <code>protected</code> if the whole dictionary failed.</dd></div>
+              <div class="fld"><dt>key_found</dt><dd>The dictionary key that worked (only on a weak sector).</dd></div>
+              <div class="fld"><dt>weak_sectors / total_sectors</dt><dd>The summary: how many sectors fell out of how many.</dd></div>
+              <div class="fld"><dt>grade</dt><dd>Overall A&ndash;F security grade for the card &mdash; A is clean, F is every sector weak.</dd></div>
+            </dl>
+            <p class="gi-sub">Example telemetry</p>
+            <pre class="gi-ex"><code>{&quot;module&quot;:&quot;5.3&quot;,&quot;status&quot;:&quot;ok&quot;,&quot;data&quot;:{&quot;weak_sectors&quot;:14,&quot;total_sectors&quot;:16,&quot;grade&quot;:&quot;F&quot;,&quot;done&quot;:true}}</code></pre>
+            <a class="gi-src" href="https://github.com/RRonium/cyberdeck-esp32s3/blob/main/firmware/05_rfid_rc522/5.3_default_key_audit/default_key_audit/default_key_audit.ino" target="_blank" rel="noopener">
+              View this module&rsquo;s <code>.ino</code> source <span class="arrow">&rarr;</span>
+            </a>
+          </div>
+        </details>
+        <details class="guide-item">
+          <summary>
+            <span class="gi-id">5.4</span>
+            <span class="gi-name">Clone to magic card</span>
+            <span class="gi-caret" aria-hidden="true">+</span>
+          </summary>
+          <div class="gi-body">
+            <p class="gi-what">The access-control demo, done ethically: read a source MIFARE Classic card that <strong>you own</strong>, then write its UID and sector data onto a Gen1a/Gen2 &ldquo;magic&rdquo; card that <strong>you own</strong>, and verify by reading the copy back. The point is to show <em>why</em> UID-based door systems are unsafe, not to defeat anyone else&rsquo;s credential. Writes are <strong>disabled in firmware by default</strong> (<code>RFID_OPERATOR_OWNS_CARDS=0</code>); left off, the module reads the source and reports but refuses every write with <code>ownership_not_acknowledged</code>. It also refuses non-magic targets and never touches sector trailers, so it can&rsquo;t brick a card&rsquo;s keys.</p>
+            <p class="gi-sub">What the output means</p>
+            <dl class="gi-fields">
+              <div class="fld"><dt>stage</dt><dd><code>source_read</code> after the source card is cached, <code>clone</code> after a target is written.</dd></div>
+              <div class="fld"><dt>uid</dt><dd>The source card&rsquo;s UID being cloned.</dd></div>
+              <div class="fld"><dt>blocks_cached</dt><dd>How many source blocks were read into RAM.</dd></div>
+              <div class="fld"><dt>blocks_written</dt><dd>How many blocks were written to the target (clone stage).</dd></div>
+              <div class="fld"><dt>verify</dt><dd><code>match</code> if the read-back of the copy equals the source, else <code>mismatch</code>.</dd></div>
+              <div class="fld"><dt>target_type</dt><dd>How block 0 was written: <code>gen1a</code> (backdoor) or <code>gen2</code> (authenticated CUID).</dd></div>
+            </dl>
+            <p class="gi-sub">Example telemetry</p>
+            <pre class="gi-ex"><code>{&quot;module&quot;:&quot;5.4&quot;,&quot;status&quot;:&quot;ok&quot;,&quot;data&quot;:{&quot;stage&quot;:&quot;source_read&quot;,&quot;uid&quot;:&quot;DEADBEEF&quot;,&quot;blocks_cached&quot;:48}}</code></pre>
+            <a class="gi-src" href="https://github.com/RRonium/cyberdeck-esp32s3/blob/main/firmware/05_rfid_rc522/5.4_clone_to_magic/clone_to_magic/clone_to_magic.ino" target="_blank" rel="noopener">
+              View this module&rsquo;s <code>.ino</code> source <span class="arrow">&rarr;</span>
+            </a>
+          </div>
+        </details>
+        <details class="guide-item">
+          <summary>
+            <span class="gi-id">5.5</span>
+            <span class="gi-name">NDEF read / write</span>
+            <span class="gi-caret" aria-hidden="true">+</span>
+          </summary>
+          <div class="gi-body">
+            <p class="gi-what">Reads the first URI or Text NDEF record on a writable NFC tag (NTAG213/215/216 and MIFARE Ultralight) and decodes it. A tag that silently opens a URL is the &ldquo;don&rsquo;t tap random NFC tags&rdquo; phishing demo; it&rsquo;s also how you provision your own tags for the deck. Writing is behind a firmware compile switch (<code>RFID_NDEF_MODE_WRITE</code>) that is <strong>off by default</strong>, so the module is read-only unless you enable it for a tag you own.</p>
+            <p class="gi-sub">What the output means</p>
+            <dl class="gi-fields">
+              <div class="fld"><dt>record_type</dt><dd><code>uri</code> or <code>text</code> &mdash; the kind of NDEF record decoded.</dd></div>
+              <div class="fld"><dt>payload</dt><dd>The decoded value &mdash; the full URL or text string.</dd></div>
+              <div class="fld"><dt>tag_type</dt><dd>The underlying tag family (e.g. <code>MIFARE Ultralight</code>).</dd></div>
+              <div class="fld"><dt>capacity</dt><dd>Bytes of user memory read while decoding.</dd></div>
+              <div class="fld"><dt>bytes_written / verify</dt><dd>Write mode only: bytes provisioned and whether the read-back matched.</dd></div>
+            </dl>
+            <p class="gi-sub">Example telemetry</p>
+            <pre class="gi-ex"><code>{&quot;module&quot;:&quot;5.5&quot;,&quot;status&quot;:&quot;ok&quot;,&quot;data&quot;:{&quot;record_type&quot;:&quot;uri&quot;,&quot;payload&quot;:&quot;https://example.org&quot;,&quot;tag_type&quot;:&quot;MIFARE Ultralight&quot;,&quot;capacity&quot;:144}}</code></pre>
+            <a class="gi-src" href="https://github.com/RRonium/cyberdeck-esp32s3/blob/main/firmware/05_rfid_rc522/5.5_ndef_read_write/ndef_read_write/ndef_read_write.ino" target="_blank" rel="noopener">
+              View this module&rsquo;s <code>.ino</code> source <span class="arrow">&rarr;</span>
+            </a>
+          </div>
+        </details>
+        <details class="guide-item">
+          <summary>
+            <span class="gi-id">5.6</span>
+            <span class="gi-name">Reader monitor</span>
+            <span class="gi-caret" aria-hidden="true">+</span>
+          </summary>
+          <div class="gi-body">
+            <p class="gi-what">A continuous, passive scan loop that logs every card presented to the reader &mdash; UID, card type, a timestamp since the monitor started and a per-UID seen count &mdash; into a small RAM ring buffer, and counts distinct credentials. It only reads UIDs; it never authenticates, dumps or writes. This is the &ldquo;what a skimmer harvests&rdquo; view and a practical tailgating / occupancy audit: leave it at a door and see how many distinct credentials pass.</p>
+            <p class="gi-sub">What the output means</p>
+            <dl class="gi-fields">
+              <div class="fld"><dt>uid</dt><dd>The UID of the card just seen.</dd></div>
+              <div class="fld"><dt>type</dt><dd>The card type.</dd></div>
+              <div class="fld"><dt>t_ms</dt><dd>Milliseconds since the monitor started &mdash; when this card was seen.</dd></div>
+              <div class="fld"><dt>seen_count</dt><dd>How many times this particular UID has been presented.</dd></div>
+              <div class="fld"><dt>distinct / total_reads</dt><dd>The periodic summary: distinct credentials and total reads so far.</dd></div>
+            </dl>
+            <p class="gi-sub">Example telemetry</p>
+            <pre class="gi-ex"><code>{&quot;module&quot;:&quot;5.6&quot;,&quot;status&quot;:&quot;ok&quot;,&quot;data&quot;:{&quot;uid&quot;:&quot;DEADBEEF&quot;,&quot;type&quot;:&quot;MIFARE 1KB&quot;,&quot;t_ms&quot;:12840,&quot;seen_count&quot;:3}}</code></pre>
+            <a class="gi-src" href="https://github.com/RRonium/cyberdeck-esp32s3/blob/main/firmware/05_rfid_rc522/5.6_reader_monitor/reader_monitor/reader_monitor.ino" target="_blank" rel="noopener">
+              View this module&rsquo;s <code>.ino</code> source <span class="arrow">&rarr;</span>
+            </a>
+          </div>
+        </details>
         </div>
       </div>
     </div>

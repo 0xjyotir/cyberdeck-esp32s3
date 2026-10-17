@@ -83,6 +83,20 @@
         </div>
       </div>
 
+      <div class="s-rfid">
+        <button class="sub-toggle" aria-expanded="false" aria-controls="list-rfid" onclick="toggleSub(this)">
+          <span>Subsystem 5 · RFID</span><span class="chev">▾</span>
+        </button>
+        <div class="sub-list" id="list-rfid" hidden>
+          <button class="mod-btn" data-mod="5.1" onclick="switchModule('5.1', this)">5.1 Card Fingerprint</button>
+          <button class="mod-btn" data-mod="5.2" onclick="switchModule('5.2', this)">5.2 Memory Dump</button>
+          <button class="mod-btn" data-mod="5.3" onclick="switchModule('5.3', this)">5.3 Default-Key Audit</button>
+          <button class="mod-btn" data-mod="5.4" onclick="switchModule('5.4', this)">5.4 Clone to Magic Card</button>
+          <button class="mod-btn" data-mod="5.5" onclick="switchModule('5.5', this)">5.5 NDEF Read / Write</button>
+          <button class="mod-btn" data-mod="5.6" onclick="switchModule('5.6', this)">5.6 Reader Monitor</button>
+        </div>
+      </div>
+
       <div class="s-ir">
         <button class="sub-toggle" aria-expanded="false" aria-controls="list-ir" onclick="toggleSub(this)">
           <span>Subsystem 7 · Infrared</span><span class="chev">▾</span>
@@ -180,7 +194,7 @@
     (function () {
       var orig = window.switchModule;
       if (typeof orig !== "function") return;
-      var accent = { "1": "--wifi", "2": "--ble", "4": "--nrf", "7": "--ir" };
+      var accent = { "1": "--wifi", "2": "--ble", "4": "--nrf", "5": "--rfid", "7": "--ir" };
       window.switchModule = function (modId, btn) {
         orig(modId, btn);
         try {
