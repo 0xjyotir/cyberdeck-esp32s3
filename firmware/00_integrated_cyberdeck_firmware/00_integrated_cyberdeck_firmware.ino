@@ -87,10 +87,12 @@
 // ===================================================================
 struct Rect { int16_t x, y, w, h; };
 
-enum Screen : uint8_t { SCR_HOME, SCR_MODULES, SCR_LIVE, SCR_SOON, SCR_SETUP, SCR_CALIB, SCR_CALIB_DONE, SCR_TEST };
-enum Style  : uint8_t { ST_TILE, ST_HEADER, ST_PILL, ST_ROW };
+enum Screen : uint8_t { SCR_HOME, SCR_MODULES, SCR_LIVE, SCR_SOON, SCR_SETUP, SCR_CALIB, SCR_CALIB_DONE, SCR_TEST,
+                        SCR_SETTINGS };
+enum Style  : uint8_t { ST_GRID, ST_HEADER, ST_PILL, ST_ROW, ST_ARROW, ST_BACK, ST_STEP, ST_SLIDER, ST_SEG };
 enum Action : uint8_t { ACT_OPEN_SUB, ACT_OPEN_MOD, ACT_OPEN_SETUP, ACT_BACK, ACT_TOGGLE,
-                        ACT_CALIBRATE, ACT_TEST, ACT_CLEAR, ACT_CAL_RETRY, ACT_CAL_SAVE };
+                        ACT_CALIBRATE, ACT_TEST, ACT_CLEAR, ACT_CAL_RETRY, ACT_CAL_SAVE,
+                        ACT_OPEN_SETTINGS, ACT_SCROLL, ACT_BRIGHT_STEP, ACT_BRIGHT_SET, ACT_THEME };
 
 struct Button {
   Rect r; const char* label; const char* sub;
@@ -98,6 +100,8 @@ struct Button {
 };
 
 struct ModInfo { const char* id; const char* name; };
+// One slot of the home grid. label == nullptr is an empty (reserved) slot.
+struct HomeItem { const char* label; uint8_t icon; uint8_t action; int8_t arg; };
 struct Subsystem { const char* name; uint16_t color; const ModInfo* mods; uint8_t count; bool live; };
 
 // ---- touch ----
@@ -123,27 +127,46 @@ struct Row { char a[26]; char b[26]; uint16_t color; };
 //   Accents are only for icons, active borders and live data.
 // ===================================================================
 #define RGB565(r, g, b) (uint16_t)((((r) & 0xF8) << 8) | (((g) & 0xFC) << 3) | ((b) >> 3))
-const uint16_t C_BG     = RGB565(14, 16, 20);     // #0E1014 screen
-const uint16_t C_PANEL  = RGB565(25, 28, 34);     // #191C22 bars, tiles
-const uint16_t C_RAISED = RGB565(36, 40, 48);     // #242830 pressed tile
-const uint16_t C_EDGE   = RGB565(46, 51, 60);     // #2E333C hairlines
-const uint16_t C_CYAN   = RGB565(56, 189, 248);   // #38BDF8 brand accent
-const uint16_t C_TEXT   = RGB565(230, 232, 236);  // #E6E8EC
-const uint16_t C_MUTED  = RGB565(139, 146, 156);  // #8B929C
-const uint16_t C_DIM    = RGB565(90, 97, 107);    // #5A616B
-const uint16_t C_OK     = RGB565(74, 222, 128);   // #4ADE80
-const uint16_t C_WARN   = RGB565(245, 165, 36);   // #F5A524
-const uint16_t C_ERR    = RGB565(240, 82, 82);    // #F05252
-const uint16_t C_WIFI   = RGB565(56, 189, 248);   // #38BDF8
-const uint16_t C_BLE    = RGB565(139, 124, 246);  // #8B7CF6
-const uint16_t C_NRF    = RGB565(245, 158, 11);   // #F59E0B
-const uint16_t C_RFID   = RGB565(52, 211, 153);   // #34D399
-const uint16_t C_IR     = RGB565(251, 113, 133);  // #FB7185
+// Dark is the default; applyTheme() swaps every colour below for the light
+// set (Settings > Appearance), so these are variables, not constants.
+uint16_t C_BG     = RGB565(14, 16, 20);     // #0E1014 screen
+uint16_t C_PANEL  = RGB565(25, 28, 34);     // #191C22 bars, tiles
+uint16_t C_RAISED = RGB565(36, 40, 48);     // #242830 pressed tile
+uint16_t C_EDGE   = RGB565(46, 51, 60);     // #2E333C hairlines
+uint16_t C_CYAN   = RGB565(56, 189, 248);   // #38BDF8 brand accent
+uint16_t C_TEXT   = RGB565(230, 232, 236);  // #E6E8EC
+uint16_t C_MUTED  = RGB565(139, 146, 156);  // #8B929C
+uint16_t C_DIM    = RGB565(90, 97, 107);    // #5A616B
+uint16_t C_OK     = RGB565(74, 222, 128);   // #4ADE80
+uint16_t C_WARN   = RGB565(245, 165, 36);   // #F5A524
+uint16_t C_ERR    = RGB565(240, 82, 82);    // #F05252
+uint16_t C_WIFI   = RGB565(56, 189, 248);   // #38BDF8
+uint16_t C_BLE    = RGB565(139, 124, 246);  // #8B7CF6
+uint16_t C_NRF    = RGB565(245, 158, 11);   // #F59E0B
+uint16_t C_RFID   = RGB565(52, 211, 153);   // #34D399
+uint16_t C_IR     = RGB565(251, 113, 133);  // #FB7185
 
 const int16_t W = 320, H = 240, HEADER_H = 34, FOOTER_H = 16;
 
-// Home-screen tile icons (index = subsystem, last one is Setup)
-enum Icon : uint8_t { IC_WIFI, IC_BLE, IC_NRF, IC_RFID, IC_IR, IC_SETUP };
+// Home-screen tile icons (first five = subsystem index)
+enum Icon : uint8_t { IC_WIFI, IC_BLE, IC_NRF, IC_RFID, IC_IR, IC_SETUP, IC_TOUCH };
+
+// Home grid: 3 columns x 3 visible rows. More items than 9 scroll a row at a
+// time with the thin arrows on the right.
+const uint8_t GRID_COLS = 3, GRID_ROWS = 3;
+const HomeItem HOME_ITEMS[] = {
+  {"Wi-Fi",    IC_WIFI,  ACT_OPEN_SUB,      0},
+  {"BLE",      IC_BLE,   ACT_OPEN_SUB,      1},
+  {"nRF24",    IC_NRF,   ACT_OPEN_SUB,      2},
+  {"RFID",     IC_RFID,  ACT_OPEN_SUB,      3},
+  {"IR",       IC_IR,    ACT_OPEN_SUB,      4},
+  {"Touch",    IC_TOUCH, ACT_OPEN_SETUP,    0},
+  {"Settings", IC_SETUP, ACT_OPEN_SETTINGS, 0},
+  {nullptr,    0,        0,                 0},   // reserved
+  {nullptr,    0,        0,                 0},   // reserved
+};
+const uint8_t HOME_COUNT = sizeof(HOME_ITEMS) / sizeof(HOME_ITEMS[0]);
+const uint8_t BRIGHT_MAX = 10;
 
 // ===================================================================
 // MODULE METADATA (names match the dashboard TITLES)
@@ -168,7 +191,7 @@ const ModInfo IR_MODS[] = {
   {"7.1", "Carrier"},     {"7.2", "Learn"},        {"7.3", "Replay"},
   {"7.4", "Decode"},      {"7.5", "Analyse"},      {"7.6", "LED test"},
 };
-const Subsystem SUBS[] = {
+Subsystem SUBS[] = {   // colours refreshed by applyTheme()
   {"Wi-Fi", C_WIFI, WIFI_MODS, 6, true},
   {"BLE",   C_BLE,  BLE_MODS,  6, true},
   {"nRF24", C_NRF,  NRF_MODS,  6, false},
@@ -218,8 +241,11 @@ Preferences prefs;
 Screen screen = SCR_HOME;
 int8_t curSub = 0, curMod = 0;
 bool running = false;
+uint8_t homeScroll = 0;            // first visible grid row
+uint8_t brightness = 8;            // 1..BRIGHT_MAX, saved in Preferences "cdui"
+bool lightMode = false;            // saved in Preferences "cdui"
 
-const uint8_t MAX_BTNS = 8;
+const uint8_t MAX_BTNS = 16;
 Button btns[MAX_BTNS];
 uint8_t btnCount = 0;
 int8_t pressedBtn = -1;
@@ -787,7 +813,31 @@ void printAt(const char* s, int16_t x, int16_t y, uint8_t size, uint16_t color) 
   tft.setTextSize(size); tft.setTextColor(color); tft.setCursor(x, y); tft.print(s);
 }
 
-// ----- theme helpers (v2) -----
+// ----- theme (v2) -----
+void applyTheme(bool light) {
+  lightMode = light;
+  if (light) {
+    C_BG = RGB565(243, 244, 246);  C_PANEL = RGB565(255, 255, 255); C_RAISED = RGB565(229, 232, 237);
+    C_EDGE = RGB565(208, 213, 221); C_TEXT = RGB565(21, 24, 29);    C_MUTED = RGB565(84, 93, 106);
+    C_DIM = RGB565(150, 157, 168);  C_CYAN = RGB565(2, 132, 199);   C_OK = RGB565(22, 163, 74);
+    C_WARN = RGB565(217, 119, 6);   C_ERR = RGB565(220, 38, 38);
+    C_WIFI = RGB565(2, 132, 199);   C_BLE = RGB565(109, 91, 208);   C_NRF = RGB565(217, 119, 6);
+    C_RFID = RGB565(5, 150, 105);   C_IR = RGB565(225, 29, 72);
+  } else {
+    C_BG = RGB565(14, 16, 20);      C_PANEL = RGB565(25, 28, 34);   C_RAISED = RGB565(36, 40, 48);
+    C_EDGE = RGB565(46, 51, 60);    C_TEXT = RGB565(230, 232, 236); C_MUTED = RGB565(139, 146, 156);
+    C_DIM = RGB565(90, 97, 107);    C_CYAN = RGB565(56, 189, 248);  C_OK = RGB565(74, 222, 128);
+    C_WARN = RGB565(245, 165, 36);  C_ERR = RGB565(240, 82, 82);
+    C_WIFI = RGB565(56, 189, 248);  C_BLE = RGB565(139, 124, 246);  C_NRF = RGB565(245, 158, 11);
+    C_RFID = RGB565(52, 211, 153);  C_IR = RGB565(251, 113, 133);
+  }
+  const uint16_t acc[SUB_COUNT] = {C_WIFI, C_BLE, C_NRF, C_RFID, C_IR};
+  for (uint8_t i = 0; i < SUB_COUNT; i++) SUBS[i].color = acc[i];
+  statusColor = C_MUTED;
+}
+uint16_t iconColor(uint8_t icon) {
+  return icon < SUB_COUNT ? SUBS[icon].color : (icon == IC_TOUCH ? C_CYAN : C_MUTED);
+}
 // Mix two RGB565 colours; t = 0..255 is how much of `a` survives.
 uint16_t mix565(uint16_t a, uint16_t b, uint8_t t) {
   uint16_t r = (((a >> 11) & 31) * t + ((b >> 11) & 31) * (255 - t)) / 255;
@@ -852,6 +902,11 @@ void drawIcon(uint8_t icon, int16_t cx, int16_t cy, uint16_t c, uint16_t bg) {
       drawArc(cx - 6, cy, 7, -35, 35, 2, c);
       drawArc(cx - 6, cy, 12, -35, 35, 2, c);
       break;
+    case IC_TOUCH:    // calibration crosshair
+      tft.drawCircle(cx, cy, 7, c); tft.drawCircle(cx, cy, 8, c);
+      tft.drawFastHLine(cx - 11, cy, 23, c); tft.drawFastVLine(cx, cy - 11, 23, c);
+      tft.fillCircle(cx, cy, 2, c);
+      break;
     default:          // IC_SETUP: gear
       for (uint8_t i = 0; i < 8; i++) {
         float a = i * 0.785398f;
@@ -882,6 +937,13 @@ void drawHomeHeader() {
   bool idle = activeModule == "NONE";
   drawChip(idle ? "READY" : activeModule.c_str(), W - 8, HEADER_H / 2, idle ? C_OK : C_WARN);
 }
+// v2 top bar: Back on the left, title on the right, hairline under it.
+void drawTopBar(const char* title, uint16_t accent) {
+  tft.fillRect(0, 0, W, HEADER_H - 1, C_PANEL);
+  tft.drawFastHLine(0, HEADER_H - 1, W, C_EDGE);
+  addButton(0, 0, 84, HEADER_H - 1, "Back", nullptr, accent, ST_BACK, ACT_BACK, 0);
+  if (title) fontAt(title, W - 12 - fontWidth(title, true), 22, true, C_TEXT);
+}
 void drawHomeFooter() {
   int16_t y = H - FOOTER_H;
   tft.fillRect(0, y, W, FOOTER_H, C_PANEL);
@@ -905,35 +967,55 @@ void addButton(int16_t x, int16_t y, int16_t w, int16_t h, const char* label, co
   if (btnCount >= MAX_BTNS) return;
   btns[btnCount++] = {{x, y, w, h}, label, sub, color, style, action, arg};
 }
-// 2 x 3 grid between the header and the footer bar.
-Rect tileRect(uint8_t i) {
-  const int16_t pad = 6, tw = (W - 3 * pad) / 2;
-  const int16_t th = (H - HEADER_H - FOOTER_H - 4 * pad) / 3;
-  return {(int16_t)(pad + (i % 2) * (tw + pad)), (int16_t)(HEADER_H + pad + (i / 2) * (th + pad)), tw, th};
+// Home grid geometry: 3 x 3 tiles left of a thin arrow rail, between the
+// header and the footer bar. slot = position on screen (0..8).
+const int16_t GRID_PAD = 6, GRID_GAP = 5, RAIL_W = 18;
+Rect gridRect(uint8_t slot) {
+  const int16_t areaW = W - 2 * GRID_PAD - RAIL_W - GRID_GAP;
+  const int16_t areaH = H - HEADER_H - FOOTER_H - 2 * GRID_PAD;
+  const int16_t tw = (areaW - (GRID_COLS - 1) * GRID_GAP) / GRID_COLS;
+  const int16_t th = (areaH - (GRID_ROWS - 1) * GRID_GAP) / GRID_ROWS;
+  return {(int16_t)(GRID_PAD + (slot % GRID_COLS) * (tw + GRID_GAP)),
+          (int16_t)(HEADER_H + GRID_PAD + (slot / GRID_COLS) * (th + GRID_GAP)), tw, th};
+}
+Rect railRect(bool down) {
+  const int16_t top = HEADER_H + GRID_PAD, h = (H - HEADER_H - FOOTER_H - 2 * GRID_PAD - GRID_GAP) / 2;
+  return {(int16_t)(W - GRID_PAD - RAIL_W), (int16_t)(down ? top + h + GRID_GAP : top), RAIL_W, h};
+}
+uint8_t homeRows() { return (HOME_COUNT + GRID_COLS - 1) / GRID_COLS; }
+void drawEmptySlot(const Rect& r) {   // reserved slot: dotted outline
+  for (int16_t x = r.x + 6; x < r.x + r.w - 6; x += 4) {
+    tft.drawPixel(x, r.y, C_EDGE); tft.drawPixel(x, r.y + r.h - 1, C_EDGE);
+  }
+  for (int16_t y = r.y + 6; y < r.y + r.h - 6; y += 4) {
+    tft.drawPixel(r.x, y, C_EDGE); tft.drawPixel(r.x + r.w - 1, y, C_EDGE);
+  }
+  tft.drawFastHLine(r.x + r.w / 2 - 4, r.y + r.h / 2, 9, C_EDGE);
+  tft.drawFastVLine(r.x + r.w / 2, r.y + r.h / 2 - 4, 9, C_EDGE);
+}
+void drawChevron(int16_t cx, int16_t cy, int8_t dir, uint16_t c) {   // dir -1 up, +1 down
+  for (int8_t t = 0; t < 2; t++) {
+    tft.drawLine(cx - 5, cy - 3 * dir + t, cx, cy + 2 * dir + t, c);
+    tft.drawLine(cx + 5, cy - 3 * dir + t, cx, cy + 2 * dir + t, c);
+  }
 }
 void drawButton(uint8_t i, bool pressed) {
   const Button& b = btns[i]; uint16_t fg = pressed ? C_BG : b.color; const Rect& r = b.r;
-  if (b.style == ST_TILE) {
-    // Home tile: icon well on the left, name + state on the right, chevron.
+  if (b.style == ST_GRID) {
+    // Home tile: icon well on top, name under it, live dot in the corner.
     // Pressed = raised surface + accent outline (no colour flood).
     uint16_t face = pressed ? C_RAISED : C_PANEL;
     tft.fillRoundRect(r.x, r.y, r.w, r.h, 6, face);
     tft.drawRoundRect(r.x, r.y, r.w, r.h, 6, pressed ? b.color : C_EDGE);
-    uint8_t icon = (b.action == ACT_OPEN_SETUP) ? IC_SETUP : b.arg;
-    bool live = (b.action == ACT_OPEN_SETUP) || SUBS[b.arg].live;
-    const int16_t well = 34, wx = r.x + 9, wy = r.y + (r.h - well) / 2;
+    uint8_t icon = (uint8_t)b.sub[0];          // sub carries the icon id for grid tiles
+    bool isSub = b.action == ACT_OPEN_SUB;
+    bool live = !isSub || SUBS[b.arg].live;
+    const int16_t well = 28, wx = r.x + (r.w - well) / 2, wy = r.y + 5;
     uint16_t wellBg = mix565(b.color, face, live ? 46 : 26);
     tft.fillRoundRect(wx, wy, well, well, 7, wellBg);
     drawIcon(icon, wx + well / 2, wy + well / 2, live ? b.color : mix565(b.color, face, 150), wellBg);
-    int16_t tx = wx + well + 10;
-    fontAt(b.label, tx, r.y + r.h / 2 - 1, true, live ? C_TEXT : C_MUTED);
-    if (b.sub) {
-      int16_t sy = r.y + r.h / 2 + 6;
-      if (b.action == ACT_OPEN_SUB) tft.fillCircle(tx + 2, sy + 3, 2, live ? C_OK : C_DIM);
-      printAt(b.sub, b.action == ACT_OPEN_SUB ? tx + 8 : tx, sy, 1, live ? C_MUTED : C_DIM);
-    }
-    int16_t cx = r.x + r.w - 12, cy = r.y + r.h / 2;   // chevron
-    tft.drawLine(cx - 3, cy - 4, cx, cy, C_DIM); tft.drawLine(cx - 3, cy + 4, cx, cy, C_DIM);
+    fontAt(b.label, r.x + (r.w - fontWidth(b.label, true)) / 2, r.y + r.h - 7, true, live ? C_TEXT : C_MUTED);
+    if (isSub) tft.fillCircle(r.x + r.w - 8, r.y + 8, 2, live ? C_OK : C_DIM);
   } else if (b.style == ST_HEADER) {
     tft.fillRect(r.x, r.y, r.w, r.h, pressed ? b.color : C_PANEL);
     printCentered(b.label, r.x + r.w / 2, r.y + r.h / 2, 2, fg);
@@ -942,6 +1024,38 @@ void drawButton(uint8_t i, bool pressed) {
     tft.drawRoundRect(r.x, r.y, r.w, r.h, 5, b.color);
     printAt(b.label, r.x + 10, r.y + 6, 1, pressed ? C_BG : b.color);
     if (b.sub) printAt(b.sub, r.x + 44, r.y + 6, 1, pressed ? C_BG : C_TEXT);
+  } else if (b.style == ST_ARROW) {   // thin scroll rail half; arg -1 up / +1 down
+    bool on = b.color != C_DIM;
+    tft.fillRoundRect(r.x, r.y, r.w, r.h, 5, pressed && on ? C_RAISED : C_PANEL);
+    tft.drawRoundRect(r.x, r.y, r.w, r.h, 5, pressed && on ? C_CYAN : C_EDGE);
+    drawChevron(r.x + r.w / 2, r.y + r.h / 2, b.arg, on ? (pressed ? C_CYAN : C_TEXT) : C_EDGE);
+  } else if (b.style == ST_BACK) {
+    tft.fillRect(r.x, r.y, r.w, r.h, pressed ? C_RAISED : C_PANEL);
+    int16_t cy = r.y + r.h / 2;
+    for (int8_t t = 0; t < 2; t++) {
+      tft.drawLine(14 + t, cy, 19 + t, cy - 5, b.color); tft.drawLine(14 + t, cy, 19 + t, cy + 5, b.color);
+    }
+    fontAt(b.label, 26, cy + 5, false, b.color);
+  } else if (b.style == ST_STEP) {    // square - / + button
+    tft.fillRoundRect(r.x, r.y, r.w, r.h, 6, pressed ? C_RAISED : C_PANEL);
+    tft.drawRoundRect(r.x, r.y, r.w, r.h, 6, pressed ? b.color : C_EDGE);
+    int16_t cx = r.x + r.w / 2, cy = r.y + r.h / 2;
+    tft.fillRect(cx - 6, cy - 1, 13, 3, b.color);
+    if (b.arg > 0) tft.fillRect(cx - 1, cy - 6, 3, 13, b.color);
+  } else if (b.style == ST_SLIDER) {  // segmented brightness bar
+    tft.fillRoundRect(r.x, r.y, r.w, r.h, 6, C_PANEL);
+    tft.drawRoundRect(r.x, r.y, r.w, r.h, 6, pressed ? b.color : C_EDGE);
+    const int16_t pad = 6, gap = 3, segW = (r.w - 2 * pad - (BRIGHT_MAX - 1) * gap) / BRIGHT_MAX;
+    for (uint8_t k = 0; k < BRIGHT_MAX; k++) {
+      int16_t sx = r.x + pad + k * (segW + gap), sh = 8 + k * (r.h - 2 * pad - 8) / (BRIGHT_MAX - 1);
+      tft.fillRoundRect(sx, r.y + r.h - pad - sh, segW, sh, 2, k < brightness ? b.color : C_RAISED);
+    }
+  } else if (b.style == ST_SEG) {     // one half of a segmented control; arg = its value
+    bool sel = (b.arg == 1) == lightMode;
+    tft.fillRoundRect(r.x, r.y, r.w, r.h, 6, sel ? b.color : (pressed ? C_RAISED : C_PANEL));
+    tft.drawRoundRect(r.x, r.y, r.w, r.h, 6, sel ? b.color : C_EDGE);
+    uint16_t fgc = sel ? (lightMode ? C_PANEL : C_BG) : C_TEXT;
+    fontAt(b.label, r.x + (r.w - fontWidth(b.label, true)) / 2, r.y + r.h / 2 + 5, true, fgc);
   } else {  // ST_PILL
     tft.fillRoundRect(r.x, r.y, r.w, r.h, 9, pressed ? b.color : C_PANEL);
     tft.drawRoundRect(r.x, r.y, r.w, r.h, 9, b.color);
@@ -1024,19 +1138,30 @@ void drawScreen() {
   pressedBtn = -1; pressedShown = false; btnCount = 0;
 
   switch (screen) {
-    case SCR_HOME:
+    case SCR_HOME: {
       tft.fillScreen(C_BG);
       drawHomeHeader();
       drawHomeFooter();
-      for (uint8_t i = 0; i < SUB_COUNT; i++) {
-        Rect r = tileRect(i);
-        addButton(r.x, r.y, r.w, r.h, SUBS[i].name, SUBS[i].live ? "6 modules" : "Not on deck",
-                  SUBS[i].color, ST_TILE, ACT_OPEN_SUB, i);
+      uint8_t rows = homeRows();
+      if (homeScroll + GRID_ROWS > rows) homeScroll = rows > GRID_ROWS ? rows - GRID_ROWS : 0;
+      for (uint8_t slot = 0; slot < GRID_COLS * GRID_ROWS; slot++) {
+        uint8_t i = homeScroll * GRID_COLS + slot;
+        if (i >= HOME_COUNT) break;
+        Rect r = gridRect(slot);
+        const HomeItem& it = HOME_ITEMS[i];
+        if (!it.label) { drawEmptySlot(r); continue; }
+        // icon id rides in `sub` (first char) so drawButton can draw it
+        static char iconTag[HOME_COUNT][2];
+        iconTag[i][0] = (char)it.icon; iconTag[i][1] = 0;
+        addButton(r.x, r.y, r.w, r.h, it.label, iconTag[i], iconColor(it.icon), ST_GRID, it.action, it.arg);
       }
-      { Rect r = tileRect(5);
-        addButton(r.x, r.y, r.w, r.h, "Setup", "Touch, calib", C_MUTED, ST_TILE, ACT_OPEN_SETUP, 0); }
+      bool canUp = homeScroll > 0, canDown = homeScroll + GRID_ROWS < rows;
+      Rect u = railRect(false), d = railRect(true);
+      addButton(u.x, u.y, u.w, u.h, "", nullptr, canUp ? C_TEXT : C_DIM, ST_ARROW, ACT_SCROLL, -1);
+      addButton(d.x, d.y, d.w, d.h, "", nullptr, canDown ? C_TEXT : C_DIM, ST_ARROW, ACT_SCROLL, 1);
       for (uint8_t i = 0; i < btnCount; i++) drawButton(i, false);
       return;
+    }
 
     case SCR_MODULES: {
       const Subsystem& s = SUBS[curSub];
@@ -1088,6 +1213,23 @@ void drawScreen() {
       return;
     }
 
+    case SCR_SETTINGS: {
+      tft.fillScreen(C_BG);
+      drawTopBar("Settings", C_CYAN);
+      char pct[8]; snprintf(pct, sizeof(pct), "%u%%", brightness * 10);
+      fontAt("Brightness", 12, 60, true, C_TEXT);
+      printAt(pct, W - 12 - (int16_t)strlen(pct) * 6, 50, 1, C_MUTED);
+      addButton(12, 70, 40, 40, "-", nullptr, C_CYAN, ST_STEP, ACT_BRIGHT_STEP, -1);
+      addButton(58, 70, W - 116, 40, "", nullptr, C_CYAN, ST_SLIDER, ACT_BRIGHT_SET, 0);
+      addButton(W - 52, 70, 40, 40, "+", nullptr, C_CYAN, ST_STEP, ACT_BRIGHT_STEP, 1);
+      fontAt("Appearance", 12, 144, true, C_TEXT);
+      addButton(12, 154, (W - 30) / 2, 36, "Dark", nullptr, C_CYAN, ST_SEG, ACT_THEME, 0);
+      addButton(18 + (W - 30) / 2, 154, (W - 30) / 2, 36, "Light", nullptr, C_CYAN, ST_SEG, ACT_THEME, 1);
+      printAt("Saved automatically. More settings coming.", 12, 206, 1, C_DIM);
+      for (uint8_t i = 0; i < btnCount; i++) drawButton(i, false);
+      return;
+    }
+
     case SCR_TEST:
       tft.fillScreen(C_BG);
       drawHeader(nullptr, C_CYAN, false);
@@ -1124,6 +1266,30 @@ void drawScreen() {
 }
 
 void goTo(Screen s) { screen = s; drawScreen(); }
+
+// ===================================================================
+// UI SETTINGS (brightness + light/dark), saved in Preferences "cdui"
+// ===================================================================
+void setBacklight() {
+  if (TFT_BL < 0) return;
+  // 1..10 -> ~10%..100% PWM; never fully dark so the screen can't be "lost"
+  analogWrite(TFT_BL, 25 + (brightness - 1) * 230 / (BRIGHT_MAX - 1));
+}
+void loadUiPrefs() {
+  if (prefs.begin("cdui", true)) {
+    brightness = prefs.getUChar("bright", 8);
+    lightMode = prefs.getBool("light", false);
+    prefs.end();
+  }
+  if (brightness < 1 || brightness > BRIGHT_MAX) brightness = 8;
+}
+void saveUiPrefs() {
+  if (prefs.begin("cdui", false)) {
+    prefs.putUChar("bright", brightness);
+    prefs.putBool("light", lightMode);
+    prefs.end();
+  }
+}
 
 // If the USB dashboard starts/stops a module, follow it on the screen.
 void syncScreenToSerial(const char* module) {
@@ -1221,6 +1387,28 @@ void doAction(uint8_t i) {
       goTo(SCR_LIVE);
       break;
     case ACT_OPEN_SETUP: goTo(SCR_SETUP); break;
+    case ACT_OPEN_SETTINGS: goTo(SCR_SETTINGS); break;
+    case ACT_SCROLL: {
+      uint8_t rows = homeRows();
+      if (b.arg < 0 && homeScroll > 0) { homeScroll--; goTo(SCR_HOME); }
+      else if (b.arg > 0 && homeScroll + GRID_ROWS < rows) { homeScroll++; goTo(SCR_HOME); }
+      else drawButton(i, false);
+      break;
+    }
+    case ACT_BRIGHT_STEP:
+    case ACT_BRIGHT_SET: {
+      int16_t v = brightness;
+      if (b.action == ACT_BRIGHT_STEP) v += b.arg;
+      else v = 1 + (int32_t)(lastEv.x - b.r.x) * BRIGHT_MAX / b.r.w;   // tap position on the bar
+      v = constrain(v, 1, BRIGHT_MAX);
+      brightness = v; setBacklight(); saveUiPrefs();
+      goTo(SCR_SETTINGS);
+      break;
+    }
+    case ACT_THEME:
+      if ((b.arg == 1) != lightMode) { applyTheme(b.arg == 1); saveUiPrefs(); }
+      goTo(SCR_SETTINGS);
+      break;
     case ACT_CALIBRATE:  startCalibration(SCR_SETUP); break;
     case ACT_TEST:       goTo(SCR_TEST); break;
     case ACT_CLEAR:      goTo(SCR_TEST); break;
@@ -1305,7 +1493,9 @@ void setup() {
   // display + touch
   pinMode(TFT_CS, OUTPUT);   digitalWrite(TFT_CS, HIGH);
   pinMode(TOUCH_CS, OUTPUT); digitalWrite(TOUCH_CS, HIGH);
-  if (TFT_BL >= 0) { pinMode(TFT_BL, OUTPUT); digitalWrite(TFT_BL, HIGH); }
+  loadUiPrefs();
+  applyTheme(lightMode);
+  if (TFT_BL >= 0) { pinMode(TFT_BL, OUTPUT); setBacklight(); }
   SPI.begin(TFT_SCLK, TFT_MISO, TFT_MOSI);
   tft.begin(40000000);
   tft.setRotation(1);
