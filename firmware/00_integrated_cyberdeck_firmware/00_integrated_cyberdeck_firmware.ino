@@ -5,7 +5,8 @@
   For learning and authorized testing only: audit networks and devices
   you own or have permission to test.
 
-  The deck's Wi-Fi (1.1-1.6), BLE (2.1-2.6) and nRF24 (4.1-4.6) modules,
+  The deck's Wi-Fi (1.1-1.6), BLE (2.1-2.6), nRF24 (4.1-4.6) and infrared
+  (7.1-7.6) modules,
   picked and read on the on-deck touchscreen. The module code is lifted
   verbatim from firmware/unified_firmware so it behaves identically, and
   the locked serial protocol is untouched, so the USB Web Serial dashboard
@@ -13,23 +14,28 @@
 
   Tap a subsystem -> tap a module -> START. Results stream onto the screen
   the same way they fill the dashboard table (SSID/ch/RSSI for Wi-Fi,
-  name/UUID/RSSI for BLE, channel/address/payload for nRF24). Status and
+  name/UUID/RSSI for BLE, channel/address/payload for nRF24, protocol /
+  code / pulse timings for IR). Status and
   error lines ("module active", "nRF24 not found", ...) show at the
   bottom. HALT stops the module. nRF24 4.1 opens on a live spectrum graph
   (per-channel bars, peak hold, Wi-Fi 1/6/11 bands, waterfall), the
-  on-deck version of the dashboard's 4.1 graph.
+  on-deck version of the dashboard's 4.1 graph. IR captures (7.2-7.5) can
+  be drawn as a waveform on the CHART tab.
 
-  RFID / IR: NOT in this firmware yet. Their tiles are shown as "Not on
-  deck" and open a short note. To use those modules today, flash
-  firmware/unified_firmware (USB dashboard only). Porting them here needs
-  their pins moved off the display's pins first (the display is locked).
+  Every module has a "?" reference article on the module list.
+
+  RFID: NOT in this firmware yet. Its tile is shown as "Not on deck" and
+  opens a short note. To use it today, flash firmware/unified_firmware
+  (USB dashboard only). Porting it here needs its pins moved off the
+  display's pins first (the display is locked).
 
   UI: dark "industrial" theme (graphite panels, one accent per subsystem,
   FreeSans type from Adafruit GFX's bundled Fonts/ folder).
 
   ---- Libraries (Arduino Library Manager) ----
     Adafruit ILI9341 (+ Adafruit GFX, Adafruit BusIO), ArduinoJson v7.x,
-    RF24 (TMRh20) for the nRF24 modules.
+    RF24 (TMRh20) for the nRF24 modules,
+    IRremoteESP8266 (David Conran / crankyoldgit) for the IR modules.
     (ESP32 BLE + Wi-Fi come with the ESP32 Arduino core.)
   ---- Board ----
     ESP32S3 Dev Module, Flash 16MB, PSRAM "OPI PSRAM", USB CDC On Boot Enabled.
@@ -43,6 +49,9 @@
     CE   2    CSN 1    IRQ 6 (optional, unused by the code)
     SCK 12 / MOSI 11 / MISO 13 shared with the display, own chip-select.
     VCC 3V3 ONLY + a 10uF cap across VCC/GND at the module.
+  ---- Wiring: IR (rewired around the display) ----
+    Receiver KY-022 / VS1838B:  S -> GPIO15, middle -> 3V3, - -> GND
+    Transmitter KY-005:         S -> GPIO16, middle -> 3V3, - -> GND
   Touch gets calibrated on first boot (5 crosshairs); saved to flash.
 */
 
@@ -60,6 +69,9 @@
 #include <ArduinoJson.h>
 #include <SPI.h>
 #include <RF24.h>
+#include <IRrecv.h>
+#include <IRsend.h>
+#include <IRutils.h>
 #include <Preferences.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_ILI9341.h>
@@ -90,6 +102,11 @@
 #define NRF_CE_PIN   2
 #define NRF_CSN_PIN  1
 #define NRF_IRQ_PIN  6    // optional; wired but unused (the modules poll)
+// ---- IR (moved off GPIO4/5, which are the display's touch pins now) ----
+static const uint16_t IR_RX_PIN = 15;   // KY-022 / VS1838B receiver S (OUT) -> GPIO15
+static const uint16_t IR_TX_PIN = 16;   // KY-005 transmitter S -> GPIO16
+// GPIO15/16 are plain GPIOs on the S3: not strapping (0/3/45/46), not USB
+// (19/20), not flash/PSRAM (26-37), and not used by the display or nRF24.
 
 // ===================================================================
 // TOUCH TUNING
@@ -139,8 +156,9 @@ struct SavedCal { uint32_t magic; TouchCal cal; float maxErr; };
 
 // ---- on-screen result rows ----
 // meter: nRF24 level 0-32 drawn as bars (0xFF = none); mhz: nRF24 frequency (0 = none)
+// tag: short right-hand value for IR rows (bits, pulses, duty...; "" = none)
 struct Row { char a[26]; char b[26]; uint16_t color; int16_t rssi; uint32_t t; uint8_t lvl;
-             uint8_t meter; int16_t mhz; };
+             uint8_t meter; int16_t mhz; char tag[8]; };
 
 // ---- reference-article document model (the "?" reader) ----
 struct DocLine { uint8_t kind; const char* text; };   // 0 head,1 body,2 sample,3 cap,10+ figure
@@ -222,7 +240,7 @@ Subsystem SUBS[] = {   // colours refreshed by applyTheme()
   {"BLE",   C_BLE,  BLE_MODS,  6, true},
   {"nRF24", C_NRF,  NRF_MODS,  6, true},
   {"RFID",  C_RFID, RFID_MODS, 6, false},
-  {"IR",    C_IR,   IR_MODS,   6, false},
+  {"IR",    C_IR,   IR_MODS,   6, true},
 };
 const uint8_t SUB_COUNT = 5;
 
@@ -235,13 +253,15 @@ const char* moduleTitle(const char* id) {
     {"2.4","Beacon broadcaster"}, {"2.5","GATT read"}, {"2.6","Connection test"},
     {"4.1","Spectrum scan"}, {"4.2","Packet sniffer"}, {"4.3","Address discovery"},
     {"4.4","Protocol analysis"}, {"4.5","Packet storage"}, {"4.6","Lab transmitter"},
+    {"7.1","38kHz carrier"}, {"7.2","Pulse learning"}, {"7.3","Signal replay"},
+    {"7.4","Protocol decode"}, {"7.5","Signal analysis"}, {"7.6","LED circuit test"},
   };
   for (auto& e : T) if (!strcmp(e.id, id)) return e.t;
   return id;
 }
 
 // ===================================================================
-// FIRMWARE GLOBALS (from unified_firmware — Wi-Fi + BLE + nRF24 subset)
+// FIRMWARE GLOBALS (from unified_firmware — Wi-Fi + BLE + nRF24 + IR subset)
 // ===================================================================
 String activeModule = "NONE";
 unsigned long moduleActionMillis = 0;
@@ -254,6 +274,21 @@ String bleTargetAddr = "";
 bool bleTargetFound = false;
 int bleTestAttempts = 0;
 static const int BLE_TEST_MAX_ATTEMPTS = 5;
+// GATT connects (2.2 / 2.5 / 2.6). The BLE library's connect() blocks loop(),
+// so on the deck it is kept short and spaced out, letting touch + HALT run:
+//  - ONE reused client. A fresh createClient() per attempt registers a new
+//    GATT app each time; once those slots run out, connect() waits forever
+//    and the whole deck freezes.
+//  - the advertised address TYPE is passed (phones etc. use random addresses,
+//    which never connect as "public"), with a timeout instead of waiting forever.
+//  - a device that just failed is skipped for a while so another is tried,
+//    and there is a pause between attempts.
+BLEClient* pGattClient = nullptr;
+decltype(((BLEAdvertisedDevice*)nullptr)->getAddressType()) bleTargetType{};
+String bleSkipAddr = "";
+unsigned long bleSkipUntil = 0, bleNextTryMs = 0;
+static const uint32_t BLE_CONNECT_TIMEOUT_MS = 4000;
+static const uint32_t BLE_RETRY_GAP_MS = 1500, BLE_SKIP_MS = 20000;
 
 enum WifiScanState { WSCAN_IDLE, WSCAN_RUNNING };
 WifiScanState wifiScanState = WSCAN_IDLE;
@@ -275,6 +310,30 @@ static const uint8_t NRF_RING_SIZE = 32;                 // 4.5 ring-buffer dept
 uint8_t nrfRing[NRF_RING_SIZE][32];                      // 4.5 in-RAM capture store
 uint8_t nrfRingHead = 0;
 unsigned long nrfStored = 0;
+
+// --- Infrared (modules 7.x), verbatim from unified_firmware ---
+// 7.1, 7.3 and 7.6 all drive IR_TX_PIN (7.1 through LEDC, 7.3 through
+// IRsend, 7.6 through digitalWrite); 7.2, 7.4 and 7.5 share the one IRrecv
+// on IR_RX_PIN. Only one module is ever active, and startModule() stops
+// the previous one first, so the pin is always released before reuse.
+static const uint16_t IR_CAPTURE_BUFFER_SIZE = 1024;
+static const uint8_t  IR_TIMEOUT = 15;  // ms of silence that ends a capture
+static const uint32_t IR_CARRIER_HZ = 38000;   // 7.1 carrier frequency
+static const uint8_t  IR_CARRIER_RES_BITS = 8; // 7.1 LEDC resolution (duty 0-255)
+static const uint32_t IR_TEST_PULSE_US = 26;   // 7.6 pulse width (~one 38kHz period)
+static const uint32_t IR_TEST_PERIOD_MS = 10;  // 7.6 pulse interval
+IRrecv irrecv(IR_RX_PIN, IR_CAPTURE_BUFFER_SIZE, IR_TIMEOUT, true);
+IRsend irsend(IR_TX_PIN);
+decode_results irResults;
+decode_type_t lastIrProtocol = decode_type_t::UNKNOWN;
+uint64_t lastIrValue = 0;
+uint16_t lastIrBits = 0;
+bool lastIrCaptured = false;
+// Raw timings (us, mark/space alternating) of the last capture from
+// 7.2 / 7.4 / 7.5, so 7.3 can replay codes no decoder recognised.
+uint16_t lastIrRaw[IR_CAPTURE_BUFFER_SIZE];
+uint16_t lastIrRawLen = 0;
+unsigned long irTestPulseCount = 0;   // 7.6 pulses fired since START
 
 const char* lastErrMsg = "";           // last emitError() code, for the screen
 
@@ -368,6 +427,9 @@ uint16_t nrfHitCh[NRF_CH]; uint16_t nrfHitMax = 0;  // 4.2-4.5 packets per chann
 uint8_t  nrfAck[GHN]; uint8_t nrfAckN = 0, nrfAckH = 0;  // 4.6: 1 ack / 0 no ack
 unsigned long nrfAckOk = 0, nrfAckTotal = 0;
 uint8_t  nrfShownHop = 0xFF;             // hop channel the chart last showed
+
+// ---- IR graphs (UI layer; fed from the 7.x telemetry + the last capture) ----
+unsigned long irLastPulses = 0;          // 7.6: previous pulse count, for pulses / s
 
 // ===================================================================
 // TOUCH: filtering, tracking, calibration maths
@@ -534,6 +596,7 @@ void graphsReset() {
   memset(nrfHitCh, 0, sizeof(nrfHitCh)); nrfHitMax = 0;
   nrfAckN = nrfAckH = 0; nrfAckOk = nrfAckTotal = 0; nrfShownHop = 0xFF;
   nrfPeakMs = millis(); nrfStat[0] = 0;
+  irLastPulses = 0;
 }
 void rowsClear() { rowCount = 0; rowHead = 0; rowTotal = 0; listDirty = true; graphsReset(); graphDirty = true; }
 void pushRow(const char* a, const char* b, uint16_t color, int16_t rssi, uint8_t lvl) {
@@ -541,7 +604,7 @@ void pushRow(const char* a, const char* b, uint16_t color, int16_t rssi, uint8_t
   strncpy(r.a, a, sizeof(r.a) - 1); r.a[sizeof(r.a) - 1] = 0;
   strncpy(r.b, b, sizeof(r.b) - 1); r.b[sizeof(r.b) - 1] = 0;
   r.color = color; r.rssi = rssi; r.lvl = lvl; r.t = millis() - liveStartMs;
-  r.meter = 0xFF; r.mhz = 0;
+  r.meter = 0xFF; r.mhz = 0; r.tag[0] = 0;
   rowHead = (rowHead + 1) % ROWS;
   if (rowCount < ROWS) rowCount++;
   rowTotal++; listDirty = true;
@@ -551,6 +614,12 @@ void pushRowNrf(const char* a, const char* b, uint16_t color, uint8_t lvl, int16
   pushRow(a, b, color, 0, lvl);
   Row& r = rowBuf[(rowHead + ROWS - 1) % ROWS];
   r.mhz = mhz; r.meter = meter;
+}
+// IR row: no RSSI; a short value (bits / pulses / duty) on the right instead.
+void pushRowIr(const char* a, const char* b, uint16_t color, uint8_t lvl, const char* tag) {
+  pushRow(a, b, color, 0, lvl);
+  Row& r = rowBuf[(rowHead + ROWS - 1) % ROWS];
+  strncpy(r.tag, tag, sizeof(r.tag) - 1); r.tag[sizeof(r.tag) - 1] = 0;
 }
 // graph feeders (derived from the same telemetry the dashboard gets)
 void gRpush(int v) { if (v > 0) v = 0; if (v < -120) v = -120; gR[gRh] = (int8_t)v; gRh = (gRh + 1) % GHN; if (gRn < GHN) gRn++; gLastRssi = v; gHaveRssi = true; }
@@ -575,6 +644,8 @@ const char* friendlyStatus(const char* code) {
   if (!strcmp(code, "malformed_json"))  return "Bad command (malformed JSON)";
   if (!strcmp(code, "unknown_action"))  return "Unknown action";
   if (!strcmp(code, "nrf_not_found"))   return "nRF24 not found: check CE2 CSN1 3V3";
+  if (!strcmp(code, "no_code_captured")) return "No code yet: capture with 7.2/7.4/7.5";
+  if (!strcmp(code, "ledc_attach_failed")) return "IR carrier failed to start (LEDC)";
   return code;
 }
 
@@ -586,6 +657,8 @@ uint16_t nrfRamp(uint8_t lv) {
   return mix565(C_ERR, C_NRF, (uint8_t)((lv - NRF_MAXLV / 2) * 255 / (NRF_MAXLV / 2)));
 }
 const char* liveId() { return SUBS[curSub].mods[curMod].id; }
+// Modules whose live view opens on CHART: the nRF24 spectrum and the IR waveform views.
+bool opensOnChart(const char* id) { return !strcmp(id, "4.1") || !strcmp(id, "7.2") || !strcmp(id, "7.5"); }
 
 // A full 126-channel sweep finished: add it to the waterfall and log one
 // summary row (busiest channel + how many channels showed a carrier).
@@ -652,6 +725,66 @@ void uiOnNrf(const char* m, JsonObject d, bool isErr) {
   gRateAccum++; graphDirty = true;
 }
 
+// IR telemetry -> screen rows. Same fields the dashboard's IR_VIEWS table
+// shows; the CHART tab draws the last capture itself (lastIrRaw).
+void uiOnIr(const char* m, JsonObject d, bool isErr) {
+  char a[26] = "", b[26] = "", t[8] = "";
+  uint16_t col = C_IR; uint8_t lvl = 0;
+  if (!strcmp(m, "7.1")) {
+    unsigned long hz = d["freq_hz"] | 0UL; int duty = d["duty_pct"] | 0; int pin = d["pin"] | 0;
+    snprintf(a, sizeof(a), "carrier %lu.%lu kHz", hz / 1000, (hz % 1000) / 100);
+    snprintf(b, sizeof(b), "duty %d%%  TX GPIO%d", duty, pin);
+    strcpy(t, hz ? "ON" : "OFF");
+    if (!hz) { col = C_WARN; lvl = 2; }
+  } else if (!strcmp(m, "7.2")) {
+    unsigned count = d["count"] | 0U; bool ovf = d["overflow"] | false;
+    snprintf(a, sizeof(a), "burst  %u pulses%s", count, ovf ? " OVF" : "");
+    uint8_t n = 0;                                   // first timings, as many as fit
+    for (uint16_t i = 0; i < lastIrRawLen && n < sizeof(b) - 1; i++) {
+      char v[8]; snprintf(v, sizeof(v), i ? " %u" : "%u", lastIrRaw[i]);
+      if (n + strlen(v) > sizeof(b) - 3) { strcpy(b + n, ".."); n += 2; break; }
+      strcpy(b + n, v); n += strlen(v);
+    }
+    snprintf(t, sizeof(t), "%u", count);
+    if (ovf) { col = C_WARN; lvl = 2; }
+  } else if (!strcmp(m, "7.3")) {
+    const char* proto = d["protocol"] | "?";
+    snprintf(a, sizeof(a), "replayed %s", proto);
+    if (!strcmp(proto, "RAW")) snprintf(b, sizeof(b), "%u raw timings @38kHz", (unsigned)(d["count"] | 0U));
+    else snprintf(b, sizeof(b), "0x%s  %u bits", d["value"] | "", (unsigned)(d["bits"] | 0U));
+    strcpy(t, "SENT");
+    char l[48]; snprintf(l, sizeof(l), "Sent %s on GPIO%u", proto, IR_TX_PIN);
+    setStatus(l, C_OK);
+  } else if (!strcmp(m, "7.4")) {
+    const char* proto = d["protocol"] | "?"; unsigned bits = d["bits"] | 0U;
+    snprintf(a, sizeof(a), "%s", proto);
+    snprintf(b, sizeof(b), "0x%s", d["value"] | "");
+    snprintf(t, sizeof(t), "%ub", bits);
+    if (!strcmp(proto, "UNKNOWN")) { col = C_WARN; lvl = 2; }
+  } else if (!strcmp(m, "7.5")) {
+    unsigned pulses = d["pulses"] | 0U;
+    unsigned long mk = d["mark_us"] | 0UL, sp = d["space_us"] | 0UL;
+    float duty = d["duty_pct"] | 0.0f;
+    snprintf(a, sizeof(a), "%u pulses  %s", pulses, d["protocol"] | "?");
+    snprintf(b, sizeof(b), "mark %.1f  space %.1f ms", mk / 1000.0f, sp / 1000.0f);
+    snprintf(t, sizeof(t), "%d%%", (int)(duty + 0.5f));
+  } else if (!strcmp(m, "7.6")) {
+    unsigned long pulses = d["pulses"] | 0UL;
+    unsigned long dp = pulses >= irLastPulses ? pulses - irLastPulses : pulses;
+    irLastPulses = pulses;
+    snprintf(a, sizeof(a), "%lu pulses fired", pulses);
+    snprintf(b, sizeof(b), "%luus every %lums GPIO%d", (unsigned long)(d["pulse_us"] | 0UL),
+             (unsigned long)(d["period_ms"] | 0UL), (int)(d["pin"] | 0));
+    snprintf(t, sizeof(t), "+%lu", dp);
+    ratePush(dp > 65535 ? 65535 : (uint16_t)dp);     // pulses / s (the loop skips 7.6)
+    pushRowIr(a, b, col, lvl, t);
+    graphDirty = true;
+    return;
+  } else return;
+  pushRowIr(a, b, isErr ? C_ERR : col, isErr ? 3 : lvl, t);
+  gRateAccum++; graphDirty = true;
+}
+
 // Build a result row from the telemetry just emitted, for the active module.
 // Wi-Fi (1.x): ssid / ch / rssi. BLE (2.x): name|addr / uuid|payload / rssi.
 void uiOnTelemetry(const char* module, const char* status) {
@@ -669,6 +802,7 @@ void uiOnTelemetry(const char* module, const char* status) {
   }
 
   if (module[0] == '4') { uiOnNrf(module, d, isErr); return; }   // nRF24
+  if (module[0] == '7') { uiOnIr(module, d, isErr); return; }    // infrared
 
   char a[26] = "", b[26] = "";
   if (module[0] == '1') {                         // Wi-Fi
@@ -732,7 +866,10 @@ class UnifiedBLECallbacks : public BLEAdvertisedDeviceCallbacks {
       emitTelemetry(activeModule.c_str(), "ok");
     } else if ((activeModule == "2.2" || activeModule == "2.5" || activeModule == "2.6") && !bleTargetFound) {
       if (device.isConnectable()) {
-        bleTargetAddr = device.getAddress().toString().c_str();
+        String a = device.getAddress().toString().c_str();
+        if (a == bleSkipAddr && millis() < bleSkipUntil) return;   // just failed: try another
+        bleTargetAddr = a;
+        bleTargetType = device.getAddressType();
         bleTargetFound = true;
         if (pBLEScan) pBLEScan->stop();
       }
@@ -754,7 +891,23 @@ bool ensureNrf() {
 }
 
 // ===================================================================
-// MODULE START / STOP (Wi-Fi + BLE + nRF24 branches, verbatim from firmware)
+// IR CAPTURE HELPER — remember the last capture (decoded + raw) for 7.3
+// ===================================================================
+void rememberIrCapture(const decode_results& r) {
+  lastIrProtocol = r.decode_type;
+  lastIrValue = r.value;
+  lastIrBits = r.bits;
+  lastIrRawLen = 0;
+  // rawbuf[0] is the gap before the frame; real timings start at 1.
+  for (uint16_t i = 1; i < r.rawlen && lastIrRawLen < IR_CAPTURE_BUFFER_SIZE; i++) {
+    uint32_t us = (uint32_t)r.rawbuf[i] * kRawTick;
+    lastIrRaw[lastIrRawLen++] = us > UINT16_MAX ? UINT16_MAX : (uint16_t)us;
+  }
+  lastIrCaptured = true;
+}
+
+// ===================================================================
+// MODULE START / STOP (Wi-Fi + BLE + nRF24 + IR branches, verbatim from firmware)
 // ===================================================================
 void stopModule();
 
@@ -763,6 +916,7 @@ void startModule(const String& module) {
   activeModule = module;
   moduleActionMillis = 0; moduleStateMillis = 0;
   bleTargetFound = false; bleTargetAddr = ""; bleTestAttempts = 0;
+  bleSkipAddr = ""; bleSkipUntil = 0; bleNextTryMs = 0;
   wifiScanState = WSCAN_IDLE;
 
   if (module == "1.3") {
@@ -852,6 +1006,23 @@ void startModule(const String& module) {
     radio.openWritingPipe(NRF_TEST_ADDR);
     radio.stopListening();
     nrfSent = 0;
+  } else if (module == "7.1") {
+    if (!ledcAttach(IR_TX_PIN, IR_CARRIER_HZ, IR_CARRIER_RES_BITS)) {
+      emitError("7.1", "ledc_attach_failed");
+      activeModule = "NONE";
+      return;
+    }
+    ledcWrite(IR_TX_PIN, 1 << (IR_CARRIER_RES_BITS - 1));  // 50% duty
+  } else if (module == "7.2" || module == "7.4" || module == "7.5") {
+    irrecv.enableIRIn();
+  } else if (module == "7.3") {
+    irsend.begin();
+    // one-shot replay happens in the execution section below, then
+    // the module auto-returns to NONE.
+  } else if (module == "7.6") {
+    pinMode(IR_TX_PIN, OUTPUT);
+    digitalWrite(IR_TX_PIN, LOW);
+    irTestPulseCount = 0;
   }
 
   telemetryDoc["data"]["msg"] = "module_active";
@@ -872,6 +1043,15 @@ void stopModule() {
   } else if (activeModule == "4.1" || activeModule == "4.2" || activeModule == "4.3" ||
              activeModule == "4.4" || activeModule == "4.5" || activeModule == "4.6") {
     if (nrfReady) { radio.stopListening(); radio.powerDown(); }
+  } else if (activeModule == "7.1") {
+    ledcWrite(IR_TX_PIN, 0);
+    ledcDetach(IR_TX_PIN);
+    pinMode(IR_TX_PIN, OUTPUT);
+    digitalWrite(IR_TX_PIN, LOW);   // leave the IR LED off
+  } else if (activeModule == "7.2" || activeModule == "7.4" || activeModule == "7.5") {
+    irrecv.disableIRIn();
+  } else if (activeModule == "7.6") {
+    digitalWrite(IR_TX_PIN, LOW);
   } else if (activeModule == "1.1" && wifiScanState == WSCAN_RUNNING) {
     WiFi.scanDelete();
     wifiScanState = WSCAN_IDLE;
@@ -905,8 +1085,22 @@ void handleSerialCommand() {
 }
 
 // ===================================================================
-// MODULE WORK (Wi-Fi 1.x + BLE 2.x loop bodies, verbatim from firmware)
+// MODULE WORK (Wi-Fi / BLE / nRF24 / IR loop bodies, verbatim from firmware)
 // ===================================================================
+BLEClient* gattClient() {
+  if (!pGattClient) pGattClient = BLEDevice::createClient();
+  return pGattClient;
+}
+bool gattConnect(BLEClient* c) {
+  return c->connect(BLEAddress(bleTargetAddr.c_str()), bleTargetType, BLE_CONNECT_TIMEOUT_MS);
+}
+// Say what's happening before the (blocking) connect, so the frozen moment is explained.
+void gattConnecting() {
+  char l[48]; snprintf(l, sizeof(l), "Connecting %s ...", bleTargetAddr.c_str());
+  setStatus(l, C_WARN);
+  if (screen == SCR_LIVE) { statusDirty = false; drawStatusLine(); }
+}
+
 void runActiveModule(unsigned long now) {
   if (activeModule == "1.1") {
     if (wifiScanState == WSCAN_IDLE && now - moduleActionMillis >= 2000) {
@@ -999,9 +1193,10 @@ void runActiveModule(unsigned long now) {
   else if (activeModule == "2.2" || activeModule == "2.5") {
     if (!bleTargetFound) {
       // discovery phase: callback-driven
-    } else {
-      BLEClient* pClient = BLEDevice::createClient();
-      if (pClient->connect(BLEAddress(bleTargetAddr.c_str()))) {
+    } else if ((long)(now - bleNextTryMs) >= 0) {
+      BLEClient* pClient = gattClient();
+      gattConnecting();
+      if (gattConnect(pClient)) {
         std::map<std::string, BLERemoteService*>* pServices = pClient->getServices();
         if (pServices != nullptr) {
           for (auto const& [suuid, pService] : *pServices) {
@@ -1031,8 +1226,10 @@ void runActiveModule(unsigned long now) {
         }
         pClient->disconnect();
       } else {
+        bleSkipAddr = bleTargetAddr; bleSkipUntil = millis() + BLE_SKIP_MS;
         emitError(activeModule.c_str(), "connect_failed");
       }
+      bleNextTryMs = millis() + BLE_RETRY_GAP_MS;   // let touch / HALT run before the next try
       bleTargetFound = false;
       pBLEScan->start(0, nullptr, false);
     }
@@ -1054,9 +1251,10 @@ void runActiveModule(unsigned long now) {
       if (now - moduleActionMillis >= 1000) {
         moduleActionMillis = now;
         bleTestAttempts++;
-        BLEClient* client = BLEDevice::createClient();
+        BLEClient* client = gattClient();
+        gattConnecting();
         unsigned long connStart = millis();
-        if (client->connect(BLEAddress(bleTargetAddr.c_str()))) {
+        if (gattConnect(client)) {
           unsigned long latency = millis() - connStart;
           telemetryDoc["data"]["name"] = bleTargetAddr;
           telemetryDoc["data"]["uuid"] = String("Attempt ") + bleTestAttempts;
@@ -1071,6 +1269,7 @@ void runActiveModule(unsigned long now) {
           telemetryDoc["data"]["payload"] = "FAILED";
           emitTelemetry("2.6", "error");
         }
+        moduleActionMillis = millis();   // 1 s gap after the connect, not before it
       }
     } else {
       telemetryDoc["data"]["msg"] = "test_complete";
@@ -1212,6 +1411,111 @@ void runActiveModule(unsigned long now) {
       telemetryDoc["data"]["sent"] = nrfSent;
       telemetryDoc["data"]["ack"] = ack;
       emitTelemetry("4.6", "ok");
+    }
+  }
+
+  // --- INFRARED SUBSYSTEM (verbatim from unified_firmware) ---
+  // 7.4 = protocol_libraries (decode via IRremoteESP8266: NEC/Sony/RC5/RC6/...)
+  else if (activeModule == "7.4") {
+    // irrecv.decode() is non-blocking: it just checks whether the
+    // interrupt-driven capture buffer has a finished result.
+    if (irrecv.decode(&irResults)) {
+      rememberIrCapture(irResults);
+
+      telemetryDoc["data"]["protocol"] = typeToString(irResults.decode_type);
+      telemetryDoc["data"]["value"] = uint64ToString(irResults.value, 16);
+      telemetryDoc["data"]["bits"] = irResults.bits;
+      emitTelemetry("7.4", "ok");
+
+      irrecv.resume();
+    }
+  }
+  // 7.2 = pulse_learning (raw mark/space timings of each capture)
+  else if (activeModule == "7.2") {
+    if (irrecv.decode(&irResults)) {
+      rememberIrCapture(irResults);
+
+      telemetryDoc["data"]["count"] = lastIrRawLen;
+      telemetryDoc["data"]["overflow"] = irResults.overflow;
+      JsonArray timings = telemetryDoc["data"]["timings_us"].to<JsonArray>();
+      for (uint16_t i = 0; i < lastIrRawLen; i++) timings.add(lastIrRaw[i]);
+      emitTelemetry("7.2", "ok");
+
+      irrecv.resume();
+    }
+  }
+  // 7.5 = signal_analysis (mark/space totals per capture)
+  else if (activeModule == "7.5") {
+    if (irrecv.decode(&irResults)) {
+      rememberIrCapture(irResults);
+
+      uint32_t markTime = 0;
+      uint32_t spaceTime = 0;
+      for (uint16_t i = 0; i < lastIrRawLen; i++) {
+        // even index = mark (LED on), odd index = space (LED off)
+        if (i % 2 == 0) markTime += lastIrRaw[i];
+        else            spaceTime += lastIrRaw[i];
+      }
+      uint32_t total = markTime + spaceTime;
+
+      telemetryDoc["data"]["pulses"] = lastIrRawLen;
+      telemetryDoc["data"]["mark_us"] = markTime;
+      telemetryDoc["data"]["space_us"] = spaceTime;
+      telemetryDoc["data"]["total_us"] = total;
+      telemetryDoc["data"]["duty_pct"] = total ? (100.0f * markTime / total) : 0.0f;
+      telemetryDoc["data"]["protocol"] = typeToString(irResults.decode_type);
+      emitTelemetry("7.5", "ok");
+
+      irrecv.resume();
+    }
+  }
+  // 7.3 = signal_replay (one-shot replay of the last 7.2/7.4/7.5 capture)
+  else if (activeModule == "7.3") {
+    if (!lastIrCaptured) {
+      emitError("7.3", "no_code_captured");
+    } else if (lastIrProtocol != decode_type_t::UNKNOWN) {
+      irsend.send(lastIrProtocol, lastIrValue, lastIrBits);
+      telemetryDoc["data"]["protocol"] = typeToString(lastIrProtocol);
+      telemetryDoc["data"]["value"] = uint64ToString(lastIrValue, 16);
+      telemetryDoc["data"]["bits"] = lastIrBits;
+      telemetryDoc["data"]["action"] = "replayed";
+      emitTelemetry("7.3", "ok");
+    } else {
+      // No decoder matched: resend the raw timings on a 38kHz carrier.
+      irsend.sendRaw(lastIrRaw, lastIrRawLen, IR_CARRIER_HZ / 1000);
+      telemetryDoc["data"]["protocol"] = "RAW";
+      telemetryDoc["data"]["count"] = lastIrRawLen;
+      telemetryDoc["data"]["action"] = "replayed";
+      emitTelemetry("7.3", "ok");
+    }
+    activeModule = "NONE";
+  }
+  // 7.1 = 38khz_modulation (carrier runs in hardware; just report)
+  else if (activeModule == "7.1") {
+    if (now - moduleActionMillis >= 1000) {
+      moduleActionMillis = now;
+      telemetryDoc["data"]["freq_hz"] = ledcReadFreq(IR_TX_PIN);
+      telemetryDoc["data"]["duty_pct"] = 50;
+      telemetryDoc["data"]["pin"] = IR_TX_PIN;
+      emitTelemetry("7.1", "ok");
+    }
+  }
+  // 7.6 = led_circuit_tests (26us pulse every 10ms, count reported 1/s)
+  else if (activeModule == "7.6") {
+    if (now - moduleStateMillis >= IR_TEST_PERIOD_MS) {
+      moduleStateMillis = now;
+      digitalWrite(IR_TX_PIN, HIGH);
+      delayMicroseconds(IR_TEST_PULSE_US);  // bounded 26us busy-wait
+      digitalWrite(IR_TX_PIN, LOW);
+      irTestPulseCount++;
+    }
+    if (now - moduleActionMillis >= 1000) {
+      moduleActionMillis = now;
+      telemetryDoc["data"]["pulses"] = irTestPulseCount;
+      telemetryDoc["data"]["pulse_us"] = IR_TEST_PULSE_US;
+      telemetryDoc["data"]["period_ms"] = IR_TEST_PERIOD_MS;
+      telemetryDoc["data"]["pin"] = IR_TX_PIN;
+      emitTelemetry("7.6", "ok");
     }
   }
 }
@@ -1374,7 +1678,7 @@ void drawHomeFooter() {
   tft.fillRect(0, y, W, FOOTER_H, C_PANEL);
   tft.drawFastHLine(0, y, W, C_EDGE);
   tft.fillCircle(10, y + 8, 2, C_OK);
-  printAt("Wi-Fi + BLE + nRF24 live", 17, y + 5, 1, C_MUTED);
+  printAt("Wi-Fi BLE nRF24 IR live", 17, y + 5, 1, C_MUTED);
   printAt("USB 115200  ESP32-S3", W - 8 - 20 * 6, y + 5, 1, C_DIM);
 }
 void printCentered(const char* s, int16_t cx, int16_t cy, uint8_t size, uint16_t color) {
@@ -1646,7 +1950,9 @@ void drawSeen() {
   if (screen != SCR_LIVE) return;
   tft.fillRect(128, LV_BAND + 2, 86, LV_BAND_H - 4, C_PANEL);
   const char* id = liveId();
-  const char* what = !strcmp(id, "4.1") ? "sweeps" : (!strcmp(id, "4.6") ? "sent" : "seen");
+  const char* what = !strcmp(id, "4.1") ? "sweeps" : (!strcmp(id, "4.6") || !strcmp(id, "7.3")) ? "sent"
+                   : (!strcmp(id, "7.1") || !strcmp(id, "7.6")) ? "reports"
+                   : id[0] == '7' ? "captures" : "seen";
   char c[18]; snprintf(c, sizeof(c), "%lu %s", rowTotal, what);
   printAt(c, 132, LV_BAND + LV_BAND_H / 2 - 3, 1, C_MUTED);
 }
@@ -1661,15 +1967,32 @@ void drawLog() {
   tft.fillRect(0, y0, W, (H - 14) - y0, C_BG);
   // column header
   tft.fillRect(0, y0, W, 13, C_PANEL);
-  bool nrf = curSub == 2, spec = nrf && !strcmp(liveId(), "4.1");
+  bool nrf = curSub == 2, spec = nrf && !strcmp(liveId(), "4.1"), ir = curSub == 4;
   printAt("TIME",   x,     y0 + 3, 1, C_DIM);
-  printAt(nrf ? (spec ? "SWEEP" : "CAPTURE") : "DEVICE / SSID", x + 44, y0 + 3, 1, C_DIM);
-  printAt(nrf ? (spec ? "PEAK" : "MHz") : "RSSI", W - 92, y0 + 3, 1, C_DIM);
-  printAt(nrf ? (spec ? "LEVEL" : "") : "SIGNAL", W - 44, y0 + 3, 1, C_DIM);
+  if (ir) {
+    const char* id = liveId(); const char* mid = "CAPTURE"; const char* rt = "PULSES";
+    if (!strcmp(id, "7.1"))      { mid = "CARRIER";          rt = "STATE"; }
+    else if (!strcmp(id, "7.2")) { mid = "BURST / TIMINGS us"; }
+    else if (!strcmp(id, "7.3")) { mid = "REPLAY";           rt = "STATE"; }
+    else if (!strcmp(id, "7.4")) { mid = "PROTOCOL / CODE";  rt = "BITS"; }
+    else if (!strcmp(id, "7.5")) { mid = "CAPTURE";          rt = "DUTY"; }
+    else if (!strcmp(id, "7.6")) { mid = "TEST PULSES";      rt = "PER s"; }
+    printAt(mid, x + 44, y0 + 3, 1, C_DIM);
+    printAt(rt, W - 8 - (int16_t)strlen(rt) * 6, y0 + 3, 1, C_DIM);
+  } else {
+    printAt(nrf ? (spec ? "SWEEP" : "CAPTURE") : "DEVICE / SSID", x + 44, y0 + 3, 1, C_DIM);
+    printAt(nrf ? (spec ? "PEAK" : "MHz") : "RSSI", W - 92, y0 + 3, 1, C_DIM);
+    printAt(nrf ? (spec ? "LEVEL" : "") : "SIGNAL", W - 44, y0 + 3, 1, C_DIM);
+  }
   tft.drawFastHLine(0, y0 + 13, W, C_EDGE);
   int16_t ry0 = y0 + 15;
   if (rowCount == 0) {
-    printAt(running ? "Listening for results..." : "Tap START to run the module",
+    const char* id = liveId();
+    bool irRx = !strcmp(id, "7.2") || !strcmp(id, "7.4") || !strcmp(id, "7.5");
+    printAt(running ? (irRx ? "Aim a remote at the receiver, press a key"
+                            : "Listening for results...")
+                    : (!strcmp(id, "7.3") ? "Tap START to send the last captured code"
+                                          : "Tap START to run the module"),
             x + 2, ry0 + 6, 1, C_MUTED);
     return;
   }
@@ -1697,6 +2020,8 @@ void drawLog() {
     } else if (rw.mhz) {                       // nRF24: frequency instead of RSSI
       char fs[8]; snprintf(fs, sizeof(fs), "%d", (int)rw.mhz);
       printAt(fs, 284 - (int16_t)strlen(fs) * 6, ry + 2, 1, C_MUTED);
+    } else if (rw.tag[0]) {                    // IR: bits / pulses / duty
+      printAt(rw.tag, W - 8 - (int16_t)strlen(rw.tag) * 6, ry + 2, 1, lc);
     }
     if (rw.meter != 0xFF) {                    // nRF24 4.1: peak level as bars
       uint16_t mc = rw.meter ? nrfRamp(rw.meter) : C_EDGE;
@@ -1712,6 +2037,7 @@ void drawLog() {
 // ----- the chart view: signal timeline + adaptive second panel -----
 void drawCharts() {
   if (curSub == 2) { drawNrfCharts(); return; }   // nRF24 has its own graphs
+  if (curSub == 4) { drawIrCharts(); return; }    // so does IR
   tft.fillRect(0, LV_Y0, W, (H - 14) - LV_Y0, C_BG);
   const Subsystem& s = SUBS[curSub]; uint16_t acc = s.color;
   int16_t p1 = LV_Y0 + 2, ph = 72, p2 = p1 + 76;
@@ -1953,6 +2279,173 @@ void drawNrfCharts() {
 }
 
 // ===================================================================
+// IR GRAPHS  (UI layer; fed by uiOnIr and the last capture, lastIrRaw)
+//   7.2-7.5  WAVEFORM of the last capture: marks (IR on) high, spaces low.
+//   7.2      + pulse-width histogram (marks vs spaces).
+//   7.5      + mark / space split (duty cycle).
+//   7.3/7.4  + the code: protocol, value, bits (7.3 = what START sends).
+//   7.1      38kHz square wave + how to check the LED.
+//   7.6      the 26us / 10ms test pulse train + pulses / s.
+// ===================================================================
+// Mark/space train, scaled to fit pw. v[0] is a mark; marks alternate with spaces.
+void irDrawWave(const uint16_t* v, uint16_t n, int16_t px, int16_t py, int16_t pw, int16_t ph, uint16_t c) {
+  uint64_t total = 0;
+  for (uint16_t i = 0; i < n; i++) total += v[i];
+  if (!total) return;
+  const int16_t hi = py, lo = py + ph - 1;
+  const uint16_t fill = mix565(c, C_PANEL, 70);
+  uint64_t t = 0;
+  tft.drawFastHLine(px, lo, pw, C_EDGE);
+  for (uint16_t i = 0; i < n; i++) {
+    uint64_t t1 = t + v[i];
+    int16_t x0 = px + (int16_t)(t * (pw - 1) / total), x1 = px + (int16_t)(t1 * (pw - 1) / total);
+    if (!(i & 1)) {                                // mark: IR on
+      if (x1 > x0) tft.fillRect(x0, hi + 1, x1 - x0, lo - hi - 1, fill);
+      tft.drawFastVLine(x0, hi, lo - hi + 1, c);
+      tft.drawFastVLine(x1, hi, lo - hi + 1, c);
+      tft.drawFastHLine(x0, hi, x1 - x0 + 1, c);
+    } else {
+      tft.drawFastHLine(x0, lo, x1 - x0 + 1, c);   // space: IR off
+    }
+    t = t1;
+  }
+}
+uint32_t irTotalUs() { uint32_t t = 0; for (uint16_t i = 0; i < lastIrRawLen; i++) t += lastIrRaw[i]; return t; }
+
+// 7.2: how many marks / spaces fall in each width bucket (ms).
+void irDrawHist(int16_t px, int16_t py, int16_t pw, int16_t ph) {
+  static const uint16_t edge[7] = {400, 800, 1200, 2000, 3000, 5000, 10000};
+  static const char* lb[8] = {"<.4", ".8", "1.2", "2", "3", "5", "10", ">10"};
+  uint16_t mk[8] = {0}, sp[8] = {0}, mx = 1;
+  for (uint16_t i = 0; i < lastIrRawLen; i++) {
+    uint8_t b = 0; while (b < 7 && lastIrRaw[i] >= edge[b]) b++;
+    uint16_t& cnt = (i & 1) ? sp[b] : mk[b];
+    if (++cnt > mx) mx = cnt;
+  }
+  const int16_t ph2 = ph - 9, bw = pw / 8, half = (bw - 8) / 2;
+  tft.drawFastHLine(px, py + ph2, pw, C_EDGE);
+  for (uint8_t b = 0; b < 8; b++) {
+    int16_t bx = px + b * bw + 3;
+    if (mk[b]) { int16_t h = mk[b] * (ph2 - 1) / mx; if (h < 1) h = 1; tft.fillRect(bx, py + ph2 - h, half, h, C_IR); }
+    if (sp[b]) { int16_t h = sp[b] * (ph2 - 1) / mx; if (h < 1) h = 1; tft.fillRect(bx + half + 2, py + ph2 - h, half, h, C_MUTED); }
+    printAt(lb[b], px + b * bw + (bw - (int16_t)strlen(lb[b]) * 6) / 2, py + ph - 7, 1, C_DIM);
+  }
+}
+
+// 7.5: one bar split into mark time and space time.
+void irDrawDuty(int16_t p2, int16_t h2) {
+  uint32_t mk = 0, sp = 0;
+  for (uint16_t i = 0; i < lastIrRawLen; i++) { if (i & 1) sp += lastIrRaw[i]; else mk += lastIrRaw[i]; }
+  uint32_t tot = mk + sp; if (!tot) return;
+  const int16_t bx = 14, bw = W - 28, by = p2 + 20, bh = 14;
+  int16_t mw = (int16_t)((uint64_t)mk * bw / tot);
+  tft.fillRoundRect(bx, by, bw, bh, 3, C_EDGE);
+  if (mw > 0) tft.fillRoundRect(bx, by, mw, bh, 3, C_IR);
+  char l[48]; snprintf(l, sizeof(l), "mark %.1f ms", mk / 1000.0f);
+  printAt(l, bx, by + bh + 6, 1, C_IR);
+  snprintf(l, sizeof(l), "space %.1f ms", sp / 1000.0f);
+  printAt(l, bx + bw - (int16_t)strlen(l) * 6, by + bh + 6, 1, C_MUTED);
+}
+
+// 7.3 / 7.4: protocol + value, large.
+void irDrawCode(int16_t p2, int16_t h2, bool replay) {
+  if (!lastIrCaptured) { printCentered("no code captured yet", W / 2, p2 + h2 / 2 + 4, 1, C_DIM); return; }
+  String proto = typeToString(lastIrProtocol);
+  bool raw = replay && lastIrProtocol == decode_type_t::UNKNOWN;
+  panelStat(p2, raw ? "RAW" : proto.c_str(), C_IR);
+  char v[24], sub[32];
+  if (raw) { snprintf(v, sizeof(v), "%u timings", lastIrRawLen); snprintf(sub, sizeof(sub), "sent raw at 38kHz"); }
+  else { snprintf(v, sizeof(v), "0x%s", uint64ToString(lastIrValue, 16).c_str()); snprintf(sub, sizeof(sub), "%u bits", lastIrBits); }
+  uint8_t sz = strlen(v) * 12 <= W - 28 ? 2 : 1;
+  printCentered(v, W / 2, p2 + 32, sz, C_TEXT);
+  printCentered(sub, W / 2, p2 + h2 - 10, 1, C_MUTED);
+}
+
+void drawIrCharts() {
+  tft.fillRect(0, LV_Y0, W, (H - 14) - LV_Y0, C_BG);
+  const char* id = liveId();
+  const int16_t p1 = LV_Y0 + 2, h1 = 88, p2 = p1 + h1 + 4, h2 = (H - 14) - 2 - p2;
+  const int16_t cx = 14, cy = p1 + 20, cw = W - 28, ch = h1 - 36, ly = p1 + h1 - 11;
+  char st[32];
+  if (!strcmp(id, "7.1")) {
+    panelFrame(p1, h1, "CARRIER  TX", C_IR);
+    snprintf(st, sizeof(st), running ? "38.0 kHz  GPIO%u" : "off  GPIO%u", IR_TX_PIN);
+    panelStat(p1, st, running ? C_OK : C_DIM);
+    if (running) {
+      int16_t per = cw / 8;
+      for (uint8_t k = 0; k < 8; k++) {
+        int16_t x = cx + k * per;
+        tft.fillRect(x, cy + 1, per / 2, ch - 2, mix565(C_IR, C_PANEL, 70));
+        tft.drawFastHLine(x, cy, per / 2, C_IR);
+        tft.drawFastVLine(x, cy, ch, C_IR); tft.drawFastVLine(x + per / 2, cy, ch, C_IR);
+        tft.drawFastHLine(x + per / 2, cy + ch - 1, per - per / 2, C_IR);
+      }
+    } else {
+      tft.drawFastHLine(cx, cy + ch - 1, cw, C_DIM);
+      printCentered("tap START to run the carrier", W / 2, cy + ch / 2, 1, C_DIM);
+    }
+    printAt("26.3 us period, 50% duty", cx, ly, 1, C_DIM);
+    panelFrame(p2, h2, "CHECK THE LED", C_IR);
+    printAt("Look at the IR LED through a phone", 18, p2 + 24, 1, C_TEXT);
+    printAt("camera: it glows faint purple while", 18, p2 + 36, 1, C_TEXT);
+    printAt("the carrier runs. Front cameras work best.", 18, p2 + 48, 1, C_MUTED);
+    return;
+  }
+  if (!strcmp(id, "7.6")) {
+    panelFrame(p1, h1, "TEST PULSES", C_IR);
+    snprintf(st, sizeof(st), "total %lu", irLastPulses); panelStat(p1, st, running ? C_IR : C_DIM);
+    tft.drawFastHLine(cx, cy + ch - 1, cw, running ? C_IR : C_DIM);
+    if (running) for (uint8_t k = 0; k < 10; k++) {
+      int16_t x = cx + 4 + k * (cw - 8) / 10;
+      tft.drawFastVLine(x, cy, ch, C_IR); tft.drawFastVLine(x + 1, cy, ch, C_IR);
+    }
+    else printCentered("tap START to fire test pulses", W / 2, cy + ch / 2, 1, C_DIM);
+    snprintf(st, sizeof(st), "%lu us pulse every %lu ms", (unsigned long)IR_TEST_PULSE_US, (unsigned long)IR_TEST_PERIOD_MS);
+    printAt(st, cx, ly, 1, C_DIM);
+    panelFrame(p2, h2, "PULSES / s", C_IR);
+    snprintf(st, sizeof(st), "%u/s", gRateLast()); panelStat(p2, st, C_IR);
+    chartRate(14, p2 + 18, W - 28, h2 - 24, C_IR);
+    return;
+  }
+  // 7.2 - 7.5: the last capture
+  bool replay = !strcmp(id, "7.3");
+  bool have = lastIrCaptured && lastIrRawLen && (replay || rowTotal > 0);
+  panelFrame(p1, h1, replay ? "WAVEFORM  CODE TO SEND" : "WAVEFORM  LAST CAPTURE", C_IR);
+  if (have) {
+    uint32_t tot = irTotalUs();
+    snprintf(st, sizeof(st), "%u pulses  %lu.%lu ms", lastIrRawLen, (unsigned long)(tot / 1000), (unsigned long)(tot % 1000 / 100));
+    panelStat(p1, st, C_IR);
+    irDrawWave(lastIrRaw, lastIrRawLen, cx, cy, cw, ch, C_IR);
+    printAt("high = IR on", cx, ly, 1, C_DIM);
+    printAt("time ->", cx + cw - 42, ly, 1, C_DIM);
+  } else {
+    tft.drawFastHLine(cx, cy + ch - 1, cw, C_DIM);
+    printCentered(replay ? "capture a code with 7.2, 7.4 or 7.5" : (running ? "aim a remote here and press a key"
+                                                                           : "tap START, then press a remote key"),
+                  W / 2, cy + ch / 2, 1, C_DIM);
+  }
+  if (!strcmp(id, "7.2")) {
+    panelFrame(p2, h2, "PULSE WIDTHS  ms", C_IR);
+    panelStat(p2, "space", C_MUTED);
+    printAt("mark", W - 14 - 5 * 6 - 8 - 4 * 6, p2 + 5, 1, C_IR);
+    if (have) irDrawHist(14, p2 + 18, W - 28, h2 - 22);
+  } else if (!strcmp(id, "7.5")) {
+    panelFrame(p2, h2, "MARK vs SPACE", C_IR);
+    if (have) {
+      uint32_t mk = 0, tot = irTotalUs();
+      for (uint16_t i = 0; i < lastIrRawLen; i += 2) mk += lastIrRaw[i];
+      snprintf(st, sizeof(st), "duty %lu%%", tot ? (unsigned long)((uint64_t)mk * 100 / tot) : 0UL);
+      panelStat(p2, st, C_IR);
+      irDrawDuty(p2, h2);
+    }
+  } else {
+    panelFrame(p2, h2, replay ? "CODE TO SEND" : "LAST CODE", C_IR);
+    if (have || replay) irDrawCode(p2, h2, replay);
+    else printCentered("no code yet", W / 2, p2 + h2 / 2 + 4, 1, C_DIM);
+  }
+}
+
+// ===================================================================
 // MODULE REFERENCE ARTICLES  (the "?" button on each module row)
 //   DocLine.kind: 0 head, 1 body, 2 sample(mono), 3 caption, 10/11/12 figure
 // ===================================================================
@@ -2177,6 +2670,241 @@ static const DocLine L26[] = {
   {1,"normal in a noisy area; mostly-failed means"},
   {1,"the target is out of range or busy."},
 };
+static const DocLine L41[] = {
+  {3,"See which 2.4GHz channels are busy."},
+  {0,"What it is"},
+  {1,"The nRF24 steps through all 126 channels"},
+  {1,"(2400-2525 MHz). On each one it listens"},
+  {1,"32 times and counts how often a signal"},
+  {1,"was stronger than about -64 dBm."},
+  {0,"What you can do"},
+  {1,"Find quiet channels for your own nRF24 or"},
+  {1,"Wi-Fi gear, see where Wi-Fi and Bluetooth"},
+  {1,"are active, and spot interference."},
+  {13,""},
+  {3,"Fig 1: two Wi-Fi humps and one busy ch."},
+  {0,"Reading it"},
+  {1,"Each bar is one channel, 0-32 hits tall."},
+  {1,"The thin mark above it is the peak hold."},
+  {1,"Tinted bands are Wi-Fi channels 1, 6, 11."},
+  {1,"The waterfall scrolls older sweeps down:"},
+  {1,"a bright column means steady traffic."},
+  {0,"Sample output"},
+  {2,"sweep #12  ch76  18/32  busy 9 ch"},
+  {0,"Wiring check"},
+  {1,"\"nRF24 not found\" means the radio did"},
+  {1,"not answer: check CE 2, CSN 1 and 3.3V."},
+};
+static const DocLine L42[] = {
+  {3,"Catch packets on the default nRF address."},
+  {0,"What it is"},
+  {1,"Listens on the nRF24 factory-default"},
+  {1,"address (E7E7E7E7E7), hopping channels"},
+  {1,"0-83 once a second, and shows every"},
+  {1,"32-byte packet it receives as hex."},
+  {0,"What you can do"},
+  {1,"Check that your own nRF24 projects are"},
+  {1,"transmitting, and on which channel. Only"},
+  {1,"monitor radios you own or may test."},
+  {0,"Sample output"},
+  {2,"ch 76  pipe1  32 B"},
+  {2,"43594201000000000000.."},
+  {0,"Reading it"},
+  {1,"Only devices left on the default address"},
+  {1,"show up. The CHART tab counts packets per"},
+  {1,"channel, with a cursor on the channel"},
+  {1,"being listened to right now."},
+};
+static const DocLine L43[] = {
+  {3,"Find nRF24 addresses in use nearby."},
+  {0,"What it is"},
+  {1,"nRF24 links filter packets by address."},
+  {1,"This listens with the 2-byte preamble"},
+  {1,"AA AA as the address, so it hears the"},
+  {1,"start of many packets, and reports the"},
+  {1,"5 bytes that follow as a candidate."},
+  {0,"What you can do"},
+  {1,"Learn which address your own devices use"},
+  {1,"before you inspect them with 4.2 or 4.4."},
+  {0,"Sample output"},
+  {2,"A3C51B9F02"},
+  {2,"ch 40  hits 7"},
+  {0,"Reading it"},
+  {1,"Hits is the running total of captures."},
+  {1,"A real address keeps coming back; one-off"},
+  {1,"candidates are usually noise."},
+};
+static const DocLine L44[] = {
+  {3,"Guess what kind of traffic a packet is."},
+  {0,"What it is"},
+  {1,"For each packet caught on the default"},
+  {1,"address it reports channel, length and"},
+  {1,"data rate, plus a simple guess: 8 or"},
+  {1,"fewer non-zero bytes reads as control,"},
+  {1,"more reads as data."},
+  {0,"What you can do"},
+  {1,"Get a feel for how your own nRF24 devices"},
+  {1,"talk: short commands versus payloads."},
+  {0,"Sample output"},
+  {2,"ch 12  control"},
+  {2,"32 B  2MBPS  pipe1"},
+  {0,"Reading it"},
+  {1,"The guess is a rule of thumb, not a full"},
+  {1,"decode. Control rows show cyan, data rows"},
+  {1,"show amber."},
+};
+static const DocLine L45[] = {
+  {3,"Keep the last 32 packets in memory."},
+  {0,"What it is"},
+  {1,"Listens on channel 2 (2402 MHz) and keeps"},
+  {1,"each packet in a 32-slot ring in RAM."},
+  {1,"When it is full, the oldest is replaced."},
+  {0,"What you can do"},
+  {1,"Collect a burst of traffic from your own"},
+  {1,"device; every packet also goes out over"},
+  {1,"USB for the dashboard to save."},
+  {0,"Sample output"},
+  {2,"stored 14  pipe1"},
+  {2,"0A1B2C3D4E5F60718293.."},
+  {0,"Reading it"},
+  {1,"Stored is the total since START. The"},
+  {1,"CHART tab shows the 32 slots; the bright"},
+  {1,"one holds the newest packet."},
+};
+static const DocLine L46[] = {
+  {3,"Send test packets to a node you own."},
+  {0,"What it is"},
+  {1,"Every 0.5 s it sends a 32-byte test frame"},
+  {1,"at low power on channel 76 (2476 MHz) to"},
+  {1,"the address CCBBDDEE01, and reports if"},
+  {1,"the receiver acknowledged it."},
+  {0,"What you can do"},
+  {1,"Range-test a link: set up a second nRF24"},
+  {1,"listening on that address, then walk"},
+  {1,"away until the acks drop."},
+  {0,"Sample output"},
+  {2,"sent 42  ACK"},
+  {2,"ch 76  CYBER"},
+  {0,"Reading it"},
+  {1,"ACK means your receiver got the frame."},
+  {1,"With no receiver set up, every frame says"},
+  {1,"no ack, which is expected."},
+};
+static const DocLine L71[] = {
+  {3,"Run the IR LED at a steady 38kHz."},
+  {0,"What it is"},
+  {1,"Most remotes flash their IR LED at about"},
+  {1,"38kHz. This drives the transmitter on"},
+  {1,"GPIO16 with a continuous 38kHz square"},
+  {1,"wave at 50% duty, made by the ESP32's PWM"},
+  {1,"hardware."},
+  {0,"What you can do"},
+  {1,"Check the transmitter works: look at the"},
+  {1,"LED through a phone camera and it shows"},
+  {1,"a faint purple glow."},
+  {0,"Sample output"},
+  {2,"carrier 38.0 kHz"},
+  {2,"duty 50%  TX GPIO16"},
+  {0,"Reading it"},
+  {1,"The frequency is read back from the PWM"},
+  {1,"hardware, so 38.0 kHz confirms it runs."},
+  {1,"A plain carrier carries no button code."},
+};
+static const DocLine L72[] = {
+  {3,"Record the raw timing of a key press."},
+  {0,"What it is"},
+  {1,"The receiver on GPIO15 strips the 38kHz"},
+  {1,"carrier and outputs on/off pulses. This"},
+  {1,"records each mark (IR on) and space"},
+  {1,"(IR off) in microseconds."},
+  {0,"What you can do"},
+  {1,"Learn a button from your own remote, even"},
+  {1,"if no decoder knows its protocol. The"},
+  {1,"last capture is kept for replay (7.3)."},
+  {14,""},
+  {3,"Fig 1: NEC frame, 9ms lead then the bits."},
+  {0,"Sample output"},
+  {2,"burst  67 pulses"},
+  {2,"9024 4496 576 552 576.."},
+  {0,"Reading it"},
+  {1,"The CHART tab draws the waveform and a"},
+  {1,"histogram of pulse widths. OVF means the"},
+  {1,"burst was longer than the buffer."},
+};
+static const DocLine L73[] = {
+  {3,"Send the last captured code back out."},
+  {0,"What it is"},
+  {1,"Sends the last capture from 7.2, 7.4 or"},
+  {1,"7.5 once on GPIO16 each time you tap"},
+  {1,"START. A known protocol is re-encoded;"},
+  {1,"otherwise the raw timings go out at"},
+  {1,"38kHz."},
+  {0,"What you can do"},
+  {1,"Control your own TV or AC from the deck,"},
+  {1,"or check that a learned code works."},
+  {0,"Sample output"},
+  {2,"replayed NEC"},
+  {2,"0x20DF10EF  32 bits"},
+  {0,"Reading it"},
+  {1,"\"No code yet\" means nothing has been"},
+  {1,"captured since power-on: run 7.2, 7.4 or"},
+  {1,"7.5 and press a remote key first. Use it"},
+  {1,"only on devices you own."},
+};
+static const DocLine L74[] = {
+  {3,"Name the protocol and code of a key."},
+  {0,"What it is"},
+  {1,"Decodes each capture with the IRremote-"},
+  {1,"ESP8266 library: NEC, Sony, RC5, RC6,"},
+  {1,"Samsung and many more."},
+  {0,"What you can do"},
+  {1,"Identify a remote's protocol and button"},
+  {1,"codes, e.g. to build your own remote."},
+  {0,"Sample output"},
+  {2,"NEC"},
+  {2,"0x20DF10EF                32b"},
+  {0,"Reading it"},
+  {1,"Value is the button code in hex; bits is"},
+  {1,"its length. Holding a key can give short"},
+  {1,"repeat codes. UNKNOWN means no decoder"},
+  {1,"matched; 7.3 can still replay it raw."},
+};
+static const DocLine L75[] = {
+  {3,"Measure the timing of a captured burst."},
+  {0,"What it is"},
+  {1,"Adds up how long the IR was on (mark) and"},
+  {1,"off (space) in each capture and works out"},
+  {1,"the duty cycle."},
+  {0,"What you can do"},
+  {1,"Compare remotes, spot noisy or partial"},
+  {1,"captures, and check a signal before you"},
+  {1,"replay it."},
+  {0,"Sample output"},
+  {2,"67 pulses  NEC                41%"},
+  {2,"mark 27.5  space 40.5 ms"},
+  {0,"Reading it"},
+  {1,"Duty is mark time over total time; many"},
+  {1,"remotes land between 30% and 50%. A very"},
+  {1,"short total usually means noise."},
+};
+static const DocLine L76[] = {
+  {3,"Fire short test pulses on the IR LED."},
+  {0,"What it is"},
+  {1,"Pulses GPIO16 high for 26us every 10ms,"},
+  {1,"about 100 pulses a second, to check the"},
+  {1,"transmitter wiring without a carrier."},
+  {0,"What you can do"},
+  {1,"Confirm the TX module is connected. A"},
+  {1,"scope or logic analyser on GPIO16 is the"},
+  {1,"surest check; the LED itself is very dim."},
+  {0,"Sample output"},
+  {2,"512 pulses fired             +100"},
+  {2,"26us every 10ms GPIO16"},
+  {0,"Reading it"},
+  {1,"The count should climb by about 100 each"},
+  {1,"second. If nothing reaches the LED, check"},
+  {1,"S goes to GPIO16 and - goes to GND."},
+};
 #define DOCN(a) (sizeof(a)/sizeof((a)[0]))
 static const Doc DOC_11 = {"Active Wi-Fi scan", "WIFI", L11, DOCN(L11)};
 static const Doc DOC_12 = {"Wardriving logger", "WIFI", L12, DOCN(L12)};
@@ -2190,6 +2918,18 @@ static const Doc DOC_23 = {"Advertisement sniffer", "BLE", L23, DOCN(L23)};
 static const Doc DOC_24 = {"Beacon broadcaster", "BLE", L24, DOCN(L24)};
 static const Doc DOC_25 = {"GATT read", "BLE", L25, DOCN(L25)};
 static const Doc DOC_26 = {"Connection test", "BLE", L26, DOCN(L26)};
+static const Doc DOC_41 = {"Spectrum scan", "NRF24", L41, DOCN(L41)};
+static const Doc DOC_42 = {"Packet sniffer", "NRF24", L42, DOCN(L42)};
+static const Doc DOC_43 = {"Address discovery", "NRF24", L43, DOCN(L43)};
+static const Doc DOC_44 = {"Protocol analysis", "NRF24", L44, DOCN(L44)};
+static const Doc DOC_45 = {"Packet storage", "NRF24", L45, DOCN(L45)};
+static const Doc DOC_46 = {"Lab transmitter", "NRF24", L46, DOCN(L46)};
+static const Doc DOC_71 = {"38kHz carrier", "IR", L71, DOCN(L71)};
+static const Doc DOC_72 = {"Pulse learning", "IR", L72, DOCN(L72)};
+static const Doc DOC_73 = {"Signal replay", "IR", L73, DOCN(L73)};
+static const Doc DOC_74 = {"Protocol decode", "IR", L74, DOCN(L74)};
+static const Doc DOC_75 = {"Signal analysis", "IR", L75, DOCN(L75)};
+static const Doc DOC_76 = {"LED circuit test", "IR", L76, DOCN(L76)};
 const Doc* moduleDoc(const char* id) {
   if (!strcmp(id, "1.1")) return &DOC_11; if (!strcmp(id, "1.2")) return &DOC_12;
   if (!strcmp(id, "1.3")) return &DOC_13; if (!strcmp(id, "1.4")) return &DOC_14;
@@ -2197,6 +2937,12 @@ const Doc* moduleDoc(const char* id) {
   if (!strcmp(id, "2.1")) return &DOC_21; if (!strcmp(id, "2.2")) return &DOC_22;
   if (!strcmp(id, "2.3")) return &DOC_23; if (!strcmp(id, "2.4")) return &DOC_24;
   if (!strcmp(id, "2.5")) return &DOC_25; if (!strcmp(id, "2.6")) return &DOC_26;
+  if (!strcmp(id, "4.1")) return &DOC_41; if (!strcmp(id, "4.2")) return &DOC_42;
+  if (!strcmp(id, "4.3")) return &DOC_43; if (!strcmp(id, "4.4")) return &DOC_44;
+  if (!strcmp(id, "4.5")) return &DOC_45; if (!strcmp(id, "4.6")) return &DOC_46;
+  if (!strcmp(id, "7.1")) return &DOC_71; if (!strcmp(id, "7.2")) return &DOC_72;
+  if (!strcmp(id, "7.3")) return &DOC_73; if (!strcmp(id, "7.4")) return &DOC_74;
+  if (!strcmp(id, "7.5")) return &DOC_75; if (!strcmp(id, "7.6")) return &DOC_76;
   static const DocLine LG[] = { {3,"No reference article for this module yet."} };
   static const Doc DG = {"Module", "", LG, 1};
   return &DG;
@@ -2226,12 +2972,32 @@ void drawInfoFigure(uint8_t k, int16_t x, int16_t y, int16_t w, int16_t h) {
       ppx = px2; ppy = yy; }
     printAt("near", ix, y + h - 11, 1, C_OK);
     printAt("time ->", ix + iw - 42, y + h - 11, 1, C_DIM);
-  } else {
+  } else if (k == 2) {
     const char* lb[4] = {"-55", "-70", "-82", "-95"}; uint16_t cc[4] = {C_OK, C_WIFI, C_WARN, C_ERR};
     for (int i = 0; i < 4; i++) { int16_t cx = ix + i * (iw / 4) + iw / 8;
       for (int bb = 0; bb < 4; bb++) { int16_t bh = 4 + bb * 4;
         tft.fillRect(cx - 14 + bb * 7, iy + ih - bh, 5, bh, bb <= (3 - i) ? cc[i] : C_EDGE); }
       printAt(lb[i], cx - 12, y + h - 11, 1, cc[i]); }
+  } else if (k == 3) {                               // nRF24 spectrum (sample)
+    for (int c = 0; c < NRF_CH; c++) {
+      int d1 = abs(c - 12), d6 = abs(c - 37), lv = (c * 37) % 11 == 0 ? 2 : 0;
+      if (d1 <= 11) lv += 9 - d1 * 9 / 12;
+      if (d6 <= 11) lv += 15 - d6 * 15 / 12;
+      if (c == 76) lv = 26; if (c == 75 || c == 77) lv = 8;
+      int16_t bh = lv * ih / NRF_MAXLV;
+      if (bh > 0) tft.fillRect(ix + c * 2, iy + ih - bh, 2, bh, nrfRamp(lv));
+    }
+    tft.drawFastHLine(ix, iy + ih, NRF_CH * 2, C_EDGE);
+    printAt("2400", ix, y + h - 11, 1, C_DIM);
+    printAt("2462", ix + 62 * 2 - 12, y + h - 11, 1, C_DIM);
+    printAt("2525 MHz", ix + NRF_CH * 2 - 48, y + h - 11, 1, C_DIM);
+  } else if (k == 4) {                               // IR NEC frame (sample: lead + 8 bits)
+    uint16_t v[19] = {9000, 4500}; uint8_t n = 2; const uint8_t code = 0x20;
+    for (int bit = 7; bit >= 0; bit--) { v[n++] = 560; v[n++] = (code >> bit) & 1 ? 1690 : 560; }
+    v[n++] = 560;
+    irDrawWave(v, n, ix, iy, iw, ih, C_IR);
+    printAt("lead", ix, y + h - 11, 1, C_DIM);
+    printAt("short gap 0, long gap 1", ix + iw - 23 * 6, y + h - 11, 1, C_DIM);
   }
 }
 
@@ -2336,7 +3102,7 @@ void drawScreen() {
       if (haveSavedCal) snprintf(line, sizeof(line), "Calibration saved, max error %.1f px", savedErr);
       else snprintf(line, sizeof(line), "Calibration: default (not calibrated)");
       printAt(line, 12, 164, 1, C_TEXT);
-      printAt("Wi-Fi, BLE + nRF24 are live on-deck.", 12, 182, 1, C_MUTED);
+      printAt("Wi-Fi, BLE, nRF24 + IR are live on-deck.", 12, 182, 1, C_MUTED);
       printAt("USB Web Serial works at the same time.", 12, 198, 1, C_MUTED);
       printAt("Hold the screen at power-on to recalibrate.", 12, 214, 1, C_MUTED);
       for (uint8_t i = 0; i < btnCount; i++) drawButton(i, false);
@@ -2444,7 +3210,7 @@ void syncScreenToSerial(const char* module) {
       if (!strcmp(SUBS[si].mods[mi].id, module)) {
         curSub = si; curMod = mi; liveStartMs = millis(); rowsClear();
         running = activeModule != "NONE";          // false if the start failed
-        if (!strcmp(module, "4.1")) liveGraph = true;   // spectrum opens on the graph
+        if (opensOnChart(module)) liveGraph = true;     // spectrum / waveform open on the graph
         if (running) setStatus("Started from USB", C_MUTED);
         else { char l[48]; snprintf(l, sizeof(l), "ERR %s", friendlyStatus(lastErrMsg)); setStatus(l, C_ERR); }
         goTo(SCR_LIVE);
@@ -2534,7 +3300,7 @@ void doAction(uint8_t i) {
       break;
     case ACT_OPEN_MOD:
       curMod = b.arg; running = false; rowsClear(); statusLine[0] = 0;
-      if (!strcmp(liveId(), "4.1")) liveGraph = true;   // spectrum opens on the graph
+      if (opensOnChart(liveId())) liveGraph = true;     // spectrum / waveform open on the graph
       goTo(SCR_LIVE);
       break;
     case ACT_OPEN_SETUP: goTo(SCR_SETUP); break;
@@ -2652,7 +3418,7 @@ void setup() {
   pBLEScan->setInterval(100);
   pBLEScan->setWindow(99);
   pAdvertising = BLEDevice::getAdvertising();
-  Serial.println("\n[+] Cyberdeck on-deck (Wi-Fi + BLE + nRF24) online.");
+  Serial.println("\n[+] Cyberdeck on-deck (Wi-Fi + BLE + nRF24 + IR) online.");
 
   // display + touch
   pinMode(TFT_CS, OUTPUT);   digitalWrite(TFT_CS, HIGH);
@@ -2660,6 +3426,7 @@ void setup() {
   pinMode(NRF_CSN_PIN, OUTPUT); digitalWrite(NRF_CSN_PIN, HIGH);   // radio off the bus
   pinMode(NRF_CE_PIN, OUTPUT);  digitalWrite(NRF_CE_PIN, LOW);
   pinMode(NRF_IRQ_PIN, INPUT_PULLUP);
+  pinMode(IR_TX_PIN, OUTPUT);   digitalWrite(IR_TX_PIN, LOW);      // IR LED off until a 7.x module runs
   loadUiPrefs();
   applyTheme(lightMode);
   if (TFT_BL >= 0) { pinMode(TFT_BL, OUTPUT); setBacklight(); }
@@ -2699,7 +3466,7 @@ void loop() {
   prevRun = running;
 
   // rate series: real packets/s for the sniffer, else telemetry events/s
-  if (screen == SCR_LIVE && running && now - gRateLastMs >= 1000) {
+  if (screen == SCR_LIVE && running && activeModule != "7.6" && now - gRateLastMs >= 1000) {
     gRateLastMs = now; uint16_t v;
     if (activeModule == "1.3") { unsigned long pc = packetCount, d = pc - gLastPackets; if (d > 65535) d = 65535; v = (uint16_t)d; gLastPackets = pc; }
     else { v = gRateAccum; gRateAccum = 0; }
