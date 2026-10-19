@@ -5,19 +5,22 @@
   For learning and authorized testing only: audit networks and devices
   you own or have permission to test.
 
-  The deck's Wi-Fi (1.1-1.6) and BLE (2.1-2.6) modules, picked and read
-  on the on-deck touchscreen. The module code is lifted verbatim from
-  firmware/unified_firmware so it behaves identically, and the locked
-  serial protocol is untouched, so the USB Web Serial dashboard can drive
-  the same modules at the same time (the screen follows it).
+  The deck's Wi-Fi (1.1-1.6), BLE (2.1-2.6) and nRF24 (4.1-4.6) modules,
+  picked and read on the on-deck touchscreen. The module code is lifted
+  verbatim from firmware/unified_firmware so it behaves identically, and
+  the locked serial protocol is untouched, so the USB Web Serial dashboard
+  can drive the same modules at the same time (the screen follows it).
 
   Tap a subsystem -> tap a module -> START. Results stream onto the screen
   the same way they fill the dashboard table (SSID/ch/RSSI for Wi-Fi,
-  name/UUID/RSSI for BLE). Status and error lines ("module active",
-  "connect failed", ...) show at the bottom. HALT stops the module.
+  name/UUID/RSSI for BLE, channel/address/payload for nRF24). Status and
+  error lines ("module active", "nRF24 not found", ...) show at the
+  bottom. HALT stops the module. nRF24 4.1 opens on a live spectrum graph
+  (per-channel bars, peak hold, Wi-Fi 1/6/11 bands, waterfall), the
+  on-deck version of the dashboard's 4.1 graph.
 
-  nRF24 / RFID / IR: NOT in this firmware yet. Their tiles are shown as
-  "Not on deck" and open a short note. To use those modules today, flash
+  RFID / IR: NOT in this firmware yet. Their tiles are shown as "Not on
+  deck" and open a short note. To use those modules today, flash
   firmware/unified_firmware (USB dashboard only). Porting them here needs
   their pins moved off the display's pins first (the display is locked).
 
@@ -25,16 +28,21 @@
   FreeSans type from Adafruit GFX's bundled Fonts/ folder).
 
   ---- Libraries (Arduino Library Manager) ----
-    Adafruit ILI9341 (+ Adafruit GFX, Adafruit BusIO), ArduinoJson v7.x.
+    Adafruit ILI9341 (+ Adafruit GFX, Adafruit BusIO), ArduinoJson v7.x,
+    RF24 (TMRh20) for the nRF24 modules.
     (ESP32 BLE + Wi-Fi come with the ESP32 Arduino core.)
   ---- Board ----
     ESP32S3 Dev Module, Flash 16MB, PSRAM "OPI PSRAM", USB CDC On Boot Enabled.
 
-  ---- Wiring (same pins as the working display test) ----
+  ---- Wiring: display (LOCKED, never move these) ----
     SCK  12   (shared SPI bus)      LED   7  (or tie to 3V3)
     MOSI 11   (shared SPI bus)      T_CS  4
     MISO 13   (shared SPI bus)      T_IRQ 5
     CS   10   DC 9    RST 8         VCC  3V3
+  ---- Wiring: nRF24L01+ (rewired around the display) ----
+    CE   2    CSN 1    IRQ 6 (optional, unused by the code)
+    SCK 12 / MOSI 11 / MISO 13 shared with the display, own chip-select.
+    VCC 3V3 ONLY + a 10uF cap across VCC/GND at the module.
   Touch gets calibrated on first boot (5 crosshairs); saved to flash.
 */
 
@@ -51,6 +59,7 @@
 #include <BLEAdvertising.h>
 #include <ArduinoJson.h>
 #include <SPI.h>
+#include <RF24.h>
 #include <Preferences.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_ILI9341.h>
@@ -62,7 +71,7 @@
 // ===================================================================
 // Display + touch: the exact pins from the working display test.
 // Data bus (12/11/13) is shared SPI; the display has its own CS.
-// Kept as-is on purpose. No other subsystems are wired to this board.
+// Kept as-is on purpose (locked): other subsystems are wired around it.
 #define TFT_SCLK   12
 #define TFT_MOSI   11
 #define TFT_MISO   13
@@ -72,6 +81,15 @@
 #define TFT_BL     7     // backlight; tie to 3V3 and set -1 if you don't wire it
 #define TOUCH_CS   4
 #define TOUCH_IRQ  5     // set to -1 if T_IRQ is not wired
+
+// nRF24L01+ (modules 4.x). Same SPI bus as the display (SCK 12 / MOSI 11 /
+// MISO 13) with its own chip-select, so the two never talk at once: every
+// display, touch and radio access is its own SPI transaction with its own
+// CS, all from loop(). CSN is driven HIGH at boot, before the display
+// starts, so the radio can't answer on MISO while the screen/touch use it.
+#define NRF_CE_PIN   2
+#define NRF_CSN_PIN  1
+#define NRF_IRQ_PIN  6    // optional; wired but unused (the modules poll)
 
 // ===================================================================
 // TOUCH TUNING
@@ -120,7 +138,9 @@ struct TouchTracker { TouchCfg cfg; TouchCal cal; TouchState state; uint8_t coun
 struct SavedCal { uint32_t magic; TouchCal cal; float maxErr; };
 
 // ---- on-screen result rows ----
-struct Row { char a[26]; char b[26]; uint16_t color; int16_t rssi; uint32_t t; uint8_t lvl; };
+// meter: nRF24 level 0-32 drawn as bars (0xFF = none); mhz: nRF24 frequency (0 = none)
+struct Row { char a[26]; char b[26]; uint16_t color; int16_t rssi; uint32_t t; uint8_t lvl;
+             uint8_t meter; int16_t mhz; };
 
 // ---- reference-article document model (the "?" reader) ----
 struct DocLine { uint8_t kind; const char* text; };   // 0 head,1 body,2 sample,3 cap,10+ figure
@@ -200,7 +220,7 @@ const ModInfo IR_MODS[] = {
 Subsystem SUBS[] = {   // colours refreshed by applyTheme()
   {"Wi-Fi", C_WIFI, WIFI_MODS, 6, true},
   {"BLE",   C_BLE,  BLE_MODS,  6, true},
-  {"nRF24", C_NRF,  NRF_MODS,  6, false},
+  {"nRF24", C_NRF,  NRF_MODS,  6, true},
   {"RFID",  C_RFID, RFID_MODS, 6, false},
   {"IR",    C_IR,   IR_MODS,   6, false},
 };
@@ -213,13 +233,15 @@ const char* moduleTitle(const char* id) {
     {"1.4","Network discovery"}, {"1.5","AP hosting"}, {"1.6","Frame lab"},
     {"2.1","BLE scan"}, {"2.2","GATT enumeration"}, {"2.3","Advertisement sniffer"},
     {"2.4","Beacon broadcaster"}, {"2.5","GATT read"}, {"2.6","Connection test"},
+    {"4.1","Spectrum scan"}, {"4.2","Packet sniffer"}, {"4.3","Address discovery"},
+    {"4.4","Protocol analysis"}, {"4.5","Packet storage"}, {"4.6","Lab transmitter"},
   };
   for (auto& e : T) if (!strcmp(e.id, id)) return e.t;
   return id;
 }
 
 // ===================================================================
-// FIRMWARE GLOBALS (from unified_firmware — Wi-Fi + BLE subset)
+// FIRMWARE GLOBALS (from unified_firmware — Wi-Fi + BLE + nRF24 subset)
 // ===================================================================
 String activeModule = "NONE";
 unsigned long moduleActionMillis = 0;
@@ -235,6 +257,26 @@ static const int BLE_TEST_MAX_ATTEMPTS = 5;
 
 enum WifiScanState { WSCAN_IDLE, WSCAN_RUNNING };
 WifiScanState wifiScanState = WSCAN_IDLE;
+
+// --- 2.4GHz nRF24 (modules 4.x), verbatim from unified_firmware ---
+RF24 radio(NRF_CE_PIN, NRF_CSN_PIN);
+bool nrfReady = false;                 // radio.begin() + chip check passed once
+uint8_t nrfChannel = 0;                // current channel during a scan / sniff
+static const uint8_t  NRF_SNIFF_START_CH = 0;    // 4.2 hop range start
+static const uint8_t  NRF_SNIFF_END_CH   = 83;   // 4.2 hop range end (2400-2483 MHz)
+static const uint64_t NRF_SNIFF_ADDR = 0xE7E7E7E7E7ULL;  // nRF24 factory-default pipe
+static const uint8_t  NRF_PREAMBLE[2] = { 0xAA, 0xAA };  // 4.3 preamble-sniff "address"
+static const uint8_t  NRF_STORE_CH = 2;                  // 4.5 fixed capture channel
+static const uint8_t  NRF_TEST_CH  = 76;                 // 4.6 lab TX channel
+static const uint64_t NRF_TEST_ADDR = 0xCCBBDDEE01ULL;   // 4.6 lab TX pipe
+unsigned long nrfHits = 0;                               // 4.3 captures seen
+unsigned long nrfSent = 0;                               // 4.6 frames sent
+static const uint8_t NRF_RING_SIZE = 32;                 // 4.5 ring-buffer depth
+uint8_t nrfRing[NRF_RING_SIZE][32];                      // 4.5 in-RAM capture store
+uint8_t nrfRingHead = 0;
+unsigned long nrfStored = 0;
+
+const char* lastErrMsg = "";           // last emitError() code, for the screen
 
 JsonDocument telemetryDoc;
 
@@ -306,6 +348,26 @@ uint16_t gRateAccum = 0; unsigned long gRateLastMs = 0, gLastPackets = 0;
 bool graphDirty = false; unsigned long lastGraphDraw = 0, lastSeenDraw = 0;
 int16_t infoScroll = 0;                            // first visible article line
 int8_t  infoSub = 0, infoMod = 0;
+
+// ---- nRF24 graphs (UI layer; fed from the 4.x telemetry) ----
+// 4.1 spectrum: latest level per channel, decaying peak hold, waterfall of
+// the last NRF_WF_ROWS sweeps. 4.2-4.5: packets per channel. 4.6: ack history.
+const uint8_t NRF_CH = 126, NRF_MAXLV = 32, NRF_WF_ROWS = 26;
+uint8_t  nrfLvl[NRF_CH];                 // 0..32 RPD hits, last pass per channel
+uint16_t nrfPeak16[NRF_CH];              // peak hold, level x16 (fractional decay)
+uint8_t  nrfWf[NRF_WF_ROWS][NRF_CH];     // waterfall ring, one row per sweep
+uint8_t  nrfWfHead = 0, nrfWfCount = 0;
+unsigned long nrfSweeps = 0;
+bool     nrfWfDirty = false;
+int16_t  nrfDrawnTop[NRF_CH], nrfDrawnPk[NRF_CH];   // what's on screen, to skip unchanged columns
+int16_t  nrfCursorCh = -1;               // sweep cursor under the axis
+unsigned long nrfPeakMs = 0;
+char     nrfStat[24] = "";
+uint16_t nrfRampLUT[NRF_MAXLV + 1], nrfWfLUT[NRF_MAXLV + 1];
+uint16_t nrfHitCh[NRF_CH]; uint16_t nrfHitMax = 0;  // 4.2-4.5 packets per channel
+uint8_t  nrfAck[GHN]; uint8_t nrfAckN = 0, nrfAckH = 0;  // 4.6: 1 ack / 0 no ack
+unsigned long nrfAckOk = 0, nrfAckTotal = 0;
+uint8_t  nrfShownHop = 0xFF;             // hop channel the chart last showed
 
 // ===================================================================
 // TOUCH: filtering, tracking, calibration maths
@@ -467,6 +529,11 @@ void graphsReset() {
   memset(gDist, 0, sizeof(gDist)); gDistMax = 0;
   gRaten = gRateh = 0; gRateMax = 1; gRateAccum = 0;
   gRateLastMs = millis(); gLastPackets = packetCount;
+  memset(nrfLvl, 0, sizeof(nrfLvl)); memset(nrfPeak16, 0, sizeof(nrfPeak16));
+  memset(nrfWf, 0, sizeof(nrfWf)); nrfWfHead = nrfWfCount = 0; nrfSweeps = 0; nrfWfDirty = true;
+  memset(nrfHitCh, 0, sizeof(nrfHitCh)); nrfHitMax = 0;
+  nrfAckN = nrfAckH = 0; nrfAckOk = nrfAckTotal = 0; nrfShownHop = 0xFF;
+  nrfPeakMs = millis(); nrfStat[0] = 0;
 }
 void rowsClear() { rowCount = 0; rowHead = 0; rowTotal = 0; listDirty = true; graphsReset(); graphDirty = true; }
 void pushRow(const char* a, const char* b, uint16_t color, int16_t rssi, uint8_t lvl) {
@@ -474,9 +541,16 @@ void pushRow(const char* a, const char* b, uint16_t color, int16_t rssi, uint8_t
   strncpy(r.a, a, sizeof(r.a) - 1); r.a[sizeof(r.a) - 1] = 0;
   strncpy(r.b, b, sizeof(r.b) - 1); r.b[sizeof(r.b) - 1] = 0;
   r.color = color; r.rssi = rssi; r.lvl = lvl; r.t = millis() - liveStartMs;
+  r.meter = 0xFF; r.mhz = 0;
   rowHead = (rowHead + 1) % ROWS;
   if (rowCount < ROWS) rowCount++;
   rowTotal++; listDirty = true;
+}
+// nRF24 row: no RSSI; carries a frequency and/or a 0-32 level meter instead.
+void pushRowNrf(const char* a, const char* b, uint16_t color, uint8_t lvl, int16_t mhz, uint8_t meter) {
+  pushRow(a, b, color, 0, lvl);
+  Row& r = rowBuf[(rowHead + ROWS - 1) % ROWS];
+  r.mhz = mhz; r.meter = meter;
 }
 // graph feeders (derived from the same telemetry the dashboard gets)
 void gRpush(int v) { if (v > 0) v = 0; if (v < -120) v = -120; gR[gRh] = (int8_t)v; gRh = (gRh + 1) % GHN; if (gRn < GHN) gRn++; gLastRssi = v; gHaveRssi = true; }
@@ -500,7 +574,82 @@ const char* friendlyStatus(const char* code) {
   if (!strcmp(code, "test_complete"))   return "Stress test complete";
   if (!strcmp(code, "malformed_json"))  return "Bad command (malformed JSON)";
   if (!strcmp(code, "unknown_action"))  return "Unknown action";
+  if (!strcmp(code, "nrf_not_found"))   return "nRF24 not found: check CE2 CSN1 3V3";
   return code;
+}
+
+// nRF24 level colour ramp (0..32): cyan -> nRF amber -> red, like the
+// dashboard's blue -> amber -> red. Tracks the theme via the C_* colours.
+uint16_t nrfRamp(uint8_t lv) {
+  if (lv > NRF_MAXLV) lv = NRF_MAXLV;
+  if (lv <= NRF_MAXLV / 2) return mix565(C_NRF, C_CYAN, (uint8_t)(lv * 255 / (NRF_MAXLV / 2)));
+  return mix565(C_ERR, C_NRF, (uint8_t)((lv - NRF_MAXLV / 2) * 255 / (NRF_MAXLV / 2)));
+}
+const char* liveId() { return SUBS[curSub].mods[curMod].id; }
+
+// A full 126-channel sweep finished: add it to the waterfall and log one
+// summary row (busiest channel + how many channels showed a carrier).
+void nrfCommitSweep() {
+  memcpy(nrfWf[nrfWfHead], nrfLvl, NRF_CH);
+  nrfWfHead = (nrfWfHead + 1) % NRF_WF_ROWS;
+  if (nrfWfCount < NRF_WF_ROWS) nrfWfCount++;
+  nrfSweeps++; nrfWfDirty = true;
+  uint8_t pk = 0, busy = 0;
+  for (uint8_t c = 0; c < NRF_CH; c++) { if (nrfLvl[c] > nrfLvl[pk]) pk = c; if (nrfLvl[c]) busy++; }
+  char a[26], b[26];
+  snprintf(a, sizeof(a), "sweep #%lu", nrfSweeps);
+  if (nrfLvl[pk]) snprintf(b, sizeof(b), "ch%u  %u/%u  busy %u ch", pk, nrfLvl[pk], NRF_MAXLV, busy);
+  else            snprintf(b, sizeof(b), "quiet  busy 0 ch");
+  pushRowNrf(a, b, nrfLvl[pk] ? nrfRamp(nrfLvl[pk]) : C_DIM, 0, nrfLvl[pk] ? 2400 + pk : 0, nrfLvl[pk]);
+}
+
+// nRF24 telemetry -> screen rows + graph state. Same fields the dashboard's
+// NRF_VIEWS table shows; 4.1 feeds the spectrum instead of one row per channel.
+void uiOnNrf(const char* m, JsonObject d, bool isErr) {
+  char a[26] = "", b[26] = "";
+  int ch = d["ch"] | -1;
+  if (!strcmp(m, "4.1")) {
+    if (ch < 0 || ch >= NRF_CH) return;
+    int lv = d["level"] | 0; if (lv < 0) lv = 0; if (lv > NRF_MAXLV) lv = NRF_MAXLV;
+    nrfLvl[ch] = (uint8_t)lv;
+    if (lv * 16 > nrfPeak16[ch]) nrfPeak16[ch] = lv * 16;
+    if (ch == NRF_CH - 1) nrfCommitSweep();
+    graphDirty = true;
+    return;
+  }
+  if (!strcmp(m, "4.2")) {
+    const char* addr = d["addr"] | "-"; const char* pl = d["payload"] | ""; int len = d["len"] | 0;
+    snprintf(a, sizeof(a), "ch %d  %s  %d B", ch, addr, len);
+    snprintf(b, sizeof(b), "%.22s%s", pl, strlen(pl) > 22 ? ".." : "");
+  } else if (!strcmp(m, "4.3")) {
+    const char* addr = d["addr"] | "-"; unsigned long hits = d["hits"] | 0UL;
+    snprintf(a, sizeof(a), "%s", addr);
+    snprintf(b, sizeof(b), "ch %d  hits %lu", ch, hits);
+  } else if (!strcmp(m, "4.4")) {
+    const char* addr = d["addr"] | "-"; const char* rate = d["rate"] | "-";
+    const char* guess = d["guess"] | "-"; int len = d["len"] | 0;
+    snprintf(a, sizeof(a), "ch %d  %s", ch, guess);
+    snprintf(b, sizeof(b), "%d B  %s  %s", len, rate, addr);
+  } else if (!strcmp(m, "4.5")) {
+    unsigned long st = d["stored"] | 0UL; const char* la = d["last_addr"] | "-"; const char* last = d["last"] | "";
+    ch = NRF_STORE_CH;
+    snprintf(a, sizeof(a), "stored %lu  %s", st, la);
+    snprintf(b, sizeof(b), "%.22s%s", last, strlen(last) > 22 ? ".." : "");
+  } else if (!strcmp(m, "4.6")) {
+    unsigned long sent = d["sent"] | 0UL; bool ack = d["ack"] | false; const char* addr = d["addr"] | "-";
+    snprintf(a, sizeof(a), "sent %lu  %s", sent, ack ? "ACK" : "no ack");
+    snprintf(b, sizeof(b), "ch %d  %s", ch, addr);
+    nrfAck[nrfAckH] = ack ? 1 : 0; nrfAckH = (nrfAckH + 1) % GHN; if (nrfAckN < GHN) nrfAckN++;
+    nrfAckTotal++; if (ack) nrfAckOk++;
+    pushRowNrf(a, b, ack ? C_OK : C_WARN, ack ? 0 : 2, 2400 + ch, 0xFF);
+    gRateAccum++; graphDirty = true;
+    return;
+  } else return;
+  if (ch >= 0 && ch < NRF_CH && ++nrfHitCh[ch] > nrfHitMax) nrfHitMax = nrfHitCh[ch];
+  uint16_t col = C_NRF;
+  if (!strcmp(m, "4.4") && !strcmp(d["guess"] | "", "control")) col = C_CYAN;
+  pushRowNrf(a, b, isErr ? C_ERR : col, isErr ? 3 : 0, ch >= 0 ? 2400 + ch : 0, 0xFF);
+  gRateAccum++; graphDirty = true;
 }
 
 // Build a result row from the telemetry just emitted, for the active module.
@@ -518,6 +667,8 @@ void uiOnTelemetry(const char* module, const char* status) {
     setStatus(line, isErr ? C_ERR : C_MUTED);
     return;
   }
+
+  if (module[0] == '4') { uiOnNrf(module, d, isErr); return; }   // nRF24
 
   char a[26] = "", b[26] = "";
   if (module[0] == '1') {                         // Wi-Fi
@@ -559,6 +710,7 @@ void emitTelemetry(const char* module, const char* status) {
   telemetryDoc.clear();
 }
 void emitError(const char* module, const char* msg) {
+  lastErrMsg = msg;                       // callers pass string literals
   telemetryDoc["data"]["msg"] = msg;
   emitTelemetry(module, "error");
 }
@@ -589,7 +741,20 @@ class UnifiedBLECallbacks : public BLEAdvertisedDeviceCallbacks {
 };
 
 // ===================================================================
-// MODULE START / STOP (Wi-Fi + BLE branches, verbatim from firmware)
+// nRF24 INIT — lazy one-time bring-up; reports if the module is missing
+//   SPI is already running (setup() starts it for the display), so the
+//   radio just joins the bus: radio.begin(&SPI) sets up CE/CSN and talks
+//   to the chip in its own SPI transactions, never re-pinning the bus.
+// ===================================================================
+bool ensureNrf() {
+  if (nrfReady) return true;
+  if (!radio.begin(&SPI) || !radio.isChipConnected()) return false;
+  nrfReady = true;
+  return true;
+}
+
+// ===================================================================
+// MODULE START / STOP (Wi-Fi + BLE + nRF24 branches, verbatim from firmware)
 // ===================================================================
 void stopModule();
 
@@ -616,6 +781,77 @@ void startModule(const String& module) {
     pBLEScan->start(0, nullptr, false);
   } else if (module == "2.4") {
     if (pAdvertising) pAdvertising->start();
+  } else if (module == "4.1") {
+    if (!ensureNrf()) { emitError("4.1", "nrf_not_found"); activeModule = "NONE"; return; }
+    radio.powerUp();
+    radio.setAutoAck(false);
+    radio.disableCRC();
+    radio.setDataRate(RF24_1MBPS);
+    radio.setPayloadSize(32);
+    radio.stopListening();
+    nrfChannel = 0;
+  } else if (module == "4.2") {
+    if (!ensureNrf()) { emitError("4.2", "nrf_not_found"); activeModule = "NONE"; return; }
+    radio.powerUp();
+    radio.setAutoAck(false);
+    radio.disableCRC();
+    radio.setDataRate(RF24_2MBPS);
+    radio.setPayloadSize(32);
+    radio.setAddressWidth(5);
+    nrfChannel = NRF_SNIFF_START_CH;
+    radio.setChannel(nrfChannel);
+    radio.openReadingPipe(1, NRF_SNIFF_ADDR);
+    radio.startListening();
+  } else if (module == "4.3") {
+    if (!ensureNrf()) { emitError("4.3", "nrf_not_found"); activeModule = "NONE"; return; }
+    radio.powerUp();
+    radio.setAutoAck(false);
+    radio.disableCRC();
+    radio.setAddressWidth(2);          // 2-byte width => preamble sniffing
+    radio.setDataRate(RF24_2MBPS);
+    radio.setPayloadSize(32);
+    nrfChannel = NRF_SNIFF_START_CH;
+    nrfHits = 0;
+    radio.setChannel(nrfChannel);
+    radio.openReadingPipe(0, NRF_PREAMBLE);
+    radio.startListening();
+  } else if (module == "4.4") {
+    if (!ensureNrf()) { emitError("4.4", "nrf_not_found"); activeModule = "NONE"; return; }
+    radio.powerUp();
+    radio.setAutoAck(false);
+    radio.disableCRC();
+    radio.setAddressWidth(5);
+    radio.setDataRate(RF24_2MBPS);
+    radio.setPayloadSize(32);
+    nrfChannel = NRF_SNIFF_START_CH;
+    radio.setChannel(nrfChannel);
+    radio.openReadingPipe(1, NRF_SNIFF_ADDR);
+    radio.startListening();
+  } else if (module == "4.5") {
+    if (!ensureNrf()) { emitError("4.5", "nrf_not_found"); activeModule = "NONE"; return; }
+    radio.powerUp();
+    radio.setAutoAck(false);
+    radio.disableCRC();
+    radio.setAddressWidth(5);
+    radio.setDataRate(RF24_2MBPS);
+    radio.setPayloadSize(32);
+    radio.setChannel(NRF_STORE_CH);
+    radio.openReadingPipe(1, NRF_SNIFF_ADDR);
+    nrfStored = 0;
+    nrfRingHead = 0;
+    radio.startListening();
+  } else if (module == "4.6") {
+    if (!ensureNrf()) { emitError("4.6", "nrf_not_found"); activeModule = "NONE"; return; }
+    radio.powerUp();
+    radio.setPALevel(RF24_PA_LOW);     // low power — lab/self-test only
+    radio.setAddressWidth(5);
+    radio.setDataRate(RF24_2MBPS);
+    radio.setPayloadSize(32);
+    radio.setRetries(5, 5);            // cap ack wait so loop() stays responsive
+    radio.setChannel(NRF_TEST_CH);
+    radio.openWritingPipe(NRF_TEST_ADDR);
+    radio.stopListening();
+    nrfSent = 0;
   }
 
   telemetryDoc["data"]["msg"] = "module_active";
@@ -633,6 +869,9 @@ void stopModule() {
     if (pBLEScan) pBLEScan->stop();
   } else if (activeModule == "2.4" && pAdvertising) {
     pAdvertising->stop();
+  } else if (activeModule == "4.1" || activeModule == "4.2" || activeModule == "4.3" ||
+             activeModule == "4.4" || activeModule == "4.5" || activeModule == "4.6") {
+    if (nrfReady) { radio.stopListening(); radio.powerDown(); }
   } else if (activeModule == "1.1" && wifiScanState == WSCAN_RUNNING) {
     WiFi.scanDelete();
     wifiScanState = WSCAN_IDLE;
@@ -843,6 +1082,138 @@ void runActiveModule(unsigned long now) {
       setStatus("Stress test complete", C_OK);
     }
   }
+
+  // --- 2.4GHZ nRF24 SUBSYSTEM (verbatim from unified_firmware) ---
+  // 4.1 spectrum scan: one channel per pass, 32 RPD samples each, cycling 0-125.
+  else if (activeModule == "4.1") {
+    if (now - moduleActionMillis >= 12) {
+      moduleActionMillis = now;
+      radio.setChannel(nrfChannel);
+      uint8_t hits = 0;
+      for (uint8_t i = 0; i < 32; i++) {
+        radio.startListening();
+        delayMicroseconds(130);
+        radio.stopListening();
+        if (radio.testRPD()) hits++;
+      }
+      telemetryDoc["data"]["ch"] = nrfChannel;
+      telemetryDoc["data"]["mhz"] = 2400 + nrfChannel;
+      telemetryDoc["data"]["level"] = hits;        // 0-32 carrier hits this pass
+      emitTelemetry("4.1", "ok");
+      nrfChannel = (nrfChannel + 1) % 126;
+    }
+  }
+  // 4.2 packet sniffer: listen on the default pipe, hop channel once a second,
+  // dump any received payload as hex. (Pipe-address capture; full promiscuous
+  // mode is a later refinement and wants a confirmed nRF24L01+, not a clone.)
+  else if (activeModule == "4.2") {
+    if (now - moduleStateMillis >= 1000) {
+      moduleStateMillis = now;
+      nrfChannel++;
+      if (nrfChannel > NRF_SNIFF_END_CH) nrfChannel = NRF_SNIFF_START_CH;
+      radio.stopListening();
+      radio.setChannel(nrfChannel);
+      radio.startListening();
+    }
+    if (radio.available()) {
+      uint8_t buf[32];
+      radio.read(buf, 32);
+      String hex = "";
+      for (uint8_t i = 0; i < 32; i++) {
+        char b[3];
+        sprintf(b, "%02X", buf[i]);
+        hex += b;
+      }
+      telemetryDoc["data"]["ch"] = nrfChannel;
+      telemetryDoc["data"]["addr"] = "pipe1";
+      telemetryDoc["data"]["len"] = 32;
+      telemetryDoc["data"]["payload"] = hex;
+      emitTelemetry("4.2", "ok");
+    }
+  }
+  // 4.3 address discovery: preamble sniff, hop channels, report candidate addr.
+  else if (activeModule == "4.3") {
+    if (now - moduleStateMillis >= 300) {
+      moduleStateMillis = now;
+      nrfChannel++;
+      if (nrfChannel > NRF_SNIFF_END_CH) nrfChannel = NRF_SNIFF_START_CH;
+      radio.stopListening();
+      radio.setChannel(nrfChannel);
+      radio.startListening();
+    }
+    if (radio.available()) {
+      uint8_t buf[32];
+      radio.read(buf, 32);
+      nrfHits++;
+      String addr = "";
+      for (uint8_t i = 0; i < 5; i++) {
+        char b[3];
+        sprintf(b, "%02X", buf[i]);
+        addr += b;
+      }
+      telemetryDoc["data"]["ch"] = nrfChannel;
+      telemetryDoc["data"]["addr"] = addr;
+      telemetryDoc["data"]["hits"] = nrfHits;
+      emitTelemetry("4.3", "ok");
+    }
+  }
+  // 4.4 protocol analysis: per-packet length/rate + heuristic traffic guess.
+  else if (activeModule == "4.4") {
+    if (now - moduleStateMillis >= 1000) {
+      moduleStateMillis = now;
+      nrfChannel++;
+      if (nrfChannel > NRF_SNIFF_END_CH) nrfChannel = NRF_SNIFF_START_CH;
+      radio.stopListening();
+      radio.setChannel(nrfChannel);
+      radio.startListening();
+    }
+    if (radio.available()) {
+      uint8_t buf[32];
+      radio.read(buf, 32);
+      uint8_t nonZero = 0;
+      for (uint8_t i = 0; i < 32; i++) if (buf[i] != 0) nonZero++;
+      telemetryDoc["data"]["ch"] = nrfChannel;
+      telemetryDoc["data"]["addr"] = "pipe1";
+      telemetryDoc["data"]["len"] = 32;
+      telemetryDoc["data"]["rate"] = "2MBPS";
+      telemetryDoc["data"]["guess"] = nonZero <= 8 ? "control" : "data";
+      emitTelemetry("4.4", "ok");
+    }
+  }
+  // 4.5 packet storage: ring-buffer captures, report running count + last frame.
+  else if (activeModule == "4.5") {
+    if (radio.available()) {
+      radio.read(nrfRing[nrfRingHead], 32);
+      String hex = "";
+      for (uint8_t i = 0; i < 32; i++) {
+        char b[3];
+        sprintf(b, "%02X", nrfRing[nrfRingHead][i]);
+        hex += b;
+      }
+      nrfRingHead = (nrfRingHead + 1) % NRF_RING_SIZE;
+      nrfStored++;
+      telemetryDoc["data"]["stored"] = nrfStored;
+      telemetryDoc["data"]["last_addr"] = "pipe1";
+      telemetryDoc["data"]["last"] = hex;
+      emitTelemetry("4.5", "ok");
+    }
+  }
+  // 4.6 lab transmitter: low-power test TX to your own node, report sent + ack.
+  else if (activeModule == "4.6") {
+    if (now - moduleActionMillis >= 500) {
+      moduleActionMillis = now;
+      uint8_t payload[32] = {0};
+      payload[0] = 'C'; payload[1] = 'Y'; payload[2] = 'B';
+      payload[3] = (uint8_t)(nrfSent & 0xFF);
+      bool ack = radio.write(payload, 32);   // bounded by setRetries(5,5)
+      nrfSent++;
+      telemetryDoc["data"]["ch"] = NRF_TEST_CH;
+      telemetryDoc["data"]["addr"] = "CYBER";
+      telemetryDoc["data"]["sent"] = nrfSent;
+      telemetryDoc["data"]["ack"] = ack;
+      emitTelemetry("4.6", "ok");
+    }
+  }
 }
 
 void wifiPacketHandler(void* buf, wifi_promiscuous_pkt_type_t type) { packetCount++; }
@@ -1003,7 +1374,7 @@ void drawHomeFooter() {
   tft.fillRect(0, y, W, FOOTER_H, C_PANEL);
   tft.drawFastHLine(0, y, W, C_EDGE);
   tft.fillCircle(10, y + 8, 2, C_OK);
-  printAt("Wi-Fi + BLE live", 17, y + 5, 1, C_MUTED);
+  printAt("Wi-Fi + BLE + nRF24 live", 17, y + 5, 1, C_MUTED);
   printAt("USB 115200  ESP32-S3", W - 8 - 20 * 6, y + 5, 1, C_DIM);
 }
 void printCentered(const char* s, int16_t cx, int16_t cy, uint8_t size, uint16_t color) {
@@ -1267,14 +1638,16 @@ void drawLiveChrome() {
   tft.drawRoundRect(contX, contY, contW, contH, 5, C_EDGE);
   addButton(contX + 2,        contY + 2, segW, contH - 4, "LOG",   nullptr, s.color, ST_TAB, ACT_VIEW, 0);
   addButton(contX + 2 + segW, contY + 2, segW, contH - 4, "CHART", nullptr, s.color, ST_TAB, ACT_VIEW, 1);
-  addButton(W - 90, LV_BAND + (LV_BAND_H - 22) / 2, 82, 22, running ? "HALT" : "START", nullptr,
+  addButton(W - 102, LV_BAND + (LV_BAND_H - 22) / 2, 94, 22, running ? "HALT" : "START", nullptr,
             running ? C_ERR : s.color, ST_RUN, ACT_TOGGLE, running ? 1 : 0);
   listDirty = true; statusDirty = true; graphDirty = true;
 }
 void drawSeen() {
   if (screen != SCR_LIVE) return;
-  tft.fillRect(128, LV_BAND + 2, 98, LV_BAND_H - 4, C_PANEL);
-  char c[18]; snprintf(c, sizeof(c), "%lu seen", rowTotal);
+  tft.fillRect(128, LV_BAND + 2, 86, LV_BAND_H - 4, C_PANEL);
+  const char* id = liveId();
+  const char* what = !strcmp(id, "4.1") ? "sweeps" : (!strcmp(id, "4.6") ? "sent" : "seen");
+  char c[18]; snprintf(c, sizeof(c), "%lu %s", rowTotal, what);
   printAt(c, 132, LV_BAND + LV_BAND_H / 2 - 3, 1, C_MUTED);
 }
 void drawStatusLine() {
@@ -1288,10 +1661,11 @@ void drawLog() {
   tft.fillRect(0, y0, W, (H - 14) - y0, C_BG);
   // column header
   tft.fillRect(0, y0, W, 13, C_PANEL);
+  bool nrf = curSub == 2, spec = nrf && !strcmp(liveId(), "4.1");
   printAt("TIME",   x,     y0 + 3, 1, C_DIM);
-  printAt("DEVICE / SSID", x + 44, y0 + 3, 1, C_DIM);
-  printAt("RSSI",   W - 92, y0 + 3, 1, C_DIM);
-  printAt("SIGNAL", W - 44, y0 + 3, 1, C_DIM);
+  printAt(nrf ? (spec ? "SWEEP" : "CAPTURE") : "DEVICE / SSID", x + 44, y0 + 3, 1, C_DIM);
+  printAt(nrf ? (spec ? "PEAK" : "MHz") : "RSSI", W - 92, y0 + 3, 1, C_DIM);
+  printAt(nrf ? (spec ? "LEVEL" : "") : "SIGNAL", W - 44, y0 + 3, 1, C_DIM);
   tft.drawFastHLine(0, y0 + 13, W, C_EDGE);
   int16_t ry0 = y0 + 15;
   if (rowCount == 0) {
@@ -1320,12 +1694,24 @@ void drawLog() {
         int16_t bh = 3 + k * 3, bx = W - 40 + k * 7, by = ry + 14 - bh;
         tft.fillRect(bx, by, 5, bh, k < bars ? rc : C_EDGE);
       }
+    } else if (rw.mhz) {                       // nRF24: frequency instead of RSSI
+      char fs[8]; snprintf(fs, sizeof(fs), "%d", (int)rw.mhz);
+      printAt(fs, 284 - (int16_t)strlen(fs) * 6, ry + 2, 1, C_MUTED);
+    }
+    if (rw.meter != 0xFF) {                    // nRF24 4.1: peak level as bars
+      uint16_t mc = rw.meter ? nrfRamp(rw.meter) : C_EDGE;
+      uint8_t bars = (rw.meter + 7) / 8;
+      for (uint8_t k = 0; k < 4; k++) {
+        int16_t bh = 3 + k * 3, bx = W - 40 + k * 7, by = ry + 14 - bh;
+        tft.fillRect(bx, by, 5, bh, k < bars ? mc : C_EDGE);
+      }
     }
   }
 }
 
 // ----- the chart view: signal timeline + adaptive second panel -----
 void drawCharts() {
+  if (curSub == 2) { drawNrfCharts(); return; }   // nRF24 has its own graphs
   tft.fillRect(0, LV_Y0, W, (H - 14) - LV_Y0, C_BG);
   const Subsystem& s = SUBS[curSub]; uint16_t acc = s.color;
   int16_t p1 = LV_Y0 + 2, ph = 72, p2 = p1 + 76;
@@ -1344,6 +1730,226 @@ void drawCharts() {
     chartDist(14, p2 + 18, W - 28, ph - 24, acc); }
   else { snprintf(s2, sizeof(s2), "%u/s", gRateLast()); panelStat(p2, s2, acc);
     chartRate(14, p2 + 18, W - 28, ph - 24, acc); }
+}
+
+// ===================================================================
+// nRF24 GRAPHS  (UI layer; fed by uiOnNrf from the same 4.x telemetry)
+//   4.1      SPECTRUM: per-channel bars (colour by level), peak hold,
+//            Wi-Fi 1/6/11 bands, sweep cursor, waterfall of past sweeps.
+//            Drawn once in full, then only changed columns are redrawn.
+//   4.2-4.4  packets per channel + hop cursor, and packets / s.
+//   4.5      the 32-slot capture ring, and stored / s.
+//   4.6      ack / no-ack per frame, and frames / s.
+// ===================================================================
+const int16_t SP_X = 36;                         // plot left; 2 px per channel -> 252 px
+const int16_t SP_Y = LV_Y0 + 30, SP_H = 54;      // plot top + height (level 32 = SP_H)
+const int16_t SP_B = SP_Y + SP_H;                // axis line
+const int16_t WF_Y = SP_B + 16;                  // waterfall top, 2 px per sweep row
+
+bool nrfInBand(uint8_t c) {                      // Wi-Fi ch 1/6/11, 22 MHz wide
+  return (c >= 1 && c <= 22) || (c >= 26 && c <= 47) || (c >= 51 && c <= 72);
+}
+uint16_t nrfColBg(uint8_t c) { return nrfInBand(c) ? mix565(C_WIFI, C_PANEL, lightMode ? 16 : 22) : C_PANEL; }
+void nrfBuildLUT() {
+  for (uint8_t lv = 0; lv <= NRF_MAXLV; lv++) {
+    nrfRampLUT[lv] = nrfRamp(lv);
+    // curved alpha so 1-3 hit noise stays dim and real carriers pop
+    uint8_t a = lv ? (uint8_t)(255 * powf((float)lv / NRF_MAXLV, 0.75f)) : 0;
+    nrfWfLUT[lv] = lv ? mix565(nrfRampLUT[lv], C_BG, a) : C_BG;
+  }
+}
+// One channel column: background (band tint + grid dots), 3-tone bar, peak tick.
+void nrfDrawCol(uint8_t c, bool force) {
+  int16_t x = SP_X + c * 2;
+  uint8_t lv = nrfLvl[c];
+  int16_t bh = (lv * SP_H + NRF_MAXLV / 2) / NRF_MAXLV; if (lv && bh < 1) bh = 1;
+  int16_t top = SP_B - bh;
+  uint8_t pk = (nrfPeak16[c] + 8) / 16; if (pk > NRF_MAXLV) pk = NRF_MAXLV;
+  int16_t py = pk ? SP_B - (pk * SP_H + NRF_MAXLV / 2) / NRF_MAXLV : -1;
+  if (py < SP_Y && py >= 0) py = SP_Y;
+  if (py >= top - 1) py = -1;                    // hidden behind the bar
+  if (!force && top == nrfDrawnTop[c] && py == nrfDrawnPk[c]) return;
+  nrfDrawnTop[c] = top; nrfDrawnPk[c] = py;
+  uint16_t bg = nrfColBg(c);
+  if (top > SP_Y) tft.fillRect(x, SP_Y, 2, top - SP_Y, bg);
+  if (c % 3 == 0) {                              // dotted grid at levels 32 and 16
+    if (SP_Y < top) tft.drawPixel(x, SP_Y, C_EDGE);
+    if (SP_Y + SP_H / 2 < top) tft.drawPixel(x, SP_Y + SP_H / 2, C_EDGE);
+  }
+  if (bh > 0) {                                  // bright cap fading into the panel
+    uint16_t col = nrfRampLUT[lv];
+    int16_t t1 = (bh + 2) / 3, rest = bh - t1, t2 = rest / 2;
+    tft.fillRect(x, top, 2, t1, col);
+    if (t2) tft.fillRect(x, top + t1, 2, t2, mix565(col, bg, 170));
+    if (rest - t2) tft.fillRect(x, top + t1 + t2, 2, rest - t2, mix565(col, bg, 95));
+  }
+  if (py >= SP_Y) tft.drawFastHLine(x, py, 2, nrfRampLUT[pk]);
+}
+bool nrfIsTick(uint8_t c) { return c % 25 == 0; }
+// Small marker under the axis on the channel being swept right now.
+void nrfDrawCursor(int16_t ch) {
+  if (ch == nrfCursorCh) return;
+  if (nrfCursorCh >= 0) {
+    int16_t ox = SP_X + nrfCursorCh * 2;
+    tft.fillRect(ox, SP_B + 1, 2, 3, C_PANEL);
+    if (nrfIsTick(nrfCursorCh)) tft.drawFastVLine(ox, SP_B + 1, 3, C_DIM);
+  }
+  if (ch >= 0) tft.fillRect(SP_X + ch * 2, SP_B + 1, 2, 3, C_TEXT);
+  nrfCursorCh = ch;
+}
+void nrfDrawWaterfall() {
+  uint16_t line[NRF_CH * 2];
+  for (uint8_t r = 0; r < NRF_WF_ROWS; r++) {
+    if (r < nrfWfCount) {
+      const uint8_t* row = nrfWf[(nrfWfHead + NRF_WF_ROWS - 1 - r) % NRF_WF_ROWS];   // newest on top
+      for (uint8_t c = 0; c < NRF_CH; c++) line[2 * c] = line[2 * c + 1] = nrfWfLUT[row[c]];
+    } else {
+      for (uint16_t i = 0; i < NRF_CH * 2; i++) line[i] = C_BG;
+    }
+    tft.drawRGBBitmap(SP_X, WF_Y + r * 2,     line, NRF_CH * 2, 1);
+    tft.drawRGBBitmap(SP_X, WF_Y + r * 2 + 1, line, NRF_CH * 2, 1);
+  }
+}
+void nrfDrawStat() {
+  char s[24]; uint8_t pk = 0;
+  for (uint8_t c = 1; c < NRF_CH; c++) if (nrfLvl[c] > nrfLvl[pk]) pk = c;
+  if (!running && !nrfSweeps)  snprintf(s, sizeof(s), "tap START");
+  else if (nrfLvl[pk])         snprintf(s, sizeof(s), "peak ch%u %u/%u", pk, nrfLvl[pk], NRF_MAXLV);
+  else if (!nrfSweeps)         snprintf(s, sizeof(s), "sweeping...");
+  else                         snprintf(s, sizeof(s), "quiet");
+  if (!strcmp(s, nrfStat)) return;
+  strcpy(nrfStat, s);
+  int16_t y = LV_Y0 + 2;
+  tft.fillRect(W - 14 - 17 * 6, y + 4, 17 * 6, 10, C_PANEL);
+  panelStat(y, s, nrfLvl[pk] ? nrfRampLUT[nrfLvl[pk]] : C_MUTED);
+}
+void drawNrfSpectrum() {
+  nrfBuildLUT();
+  const int16_t py = LV_Y0 + 2, ph = (H - 14) - 1 - py;
+  panelFrame(py, ph, "SPECTRUM 2400-2525 MHz", C_NRF);
+  const uint8_t wc[3] = {12, 37, 62}; const char* wn[3] = {"WiFi 1", "WiFi 6", "WiFi 11"};
+  uint16_t wl = mix565(C_WIFI, C_PANEL, 170);
+  for (uint8_t i = 0; i < 3; i++)
+    printAt(wn[i], SP_X + wc[i] * 2 + 1 - (int16_t)strlen(wn[i]) * 3, SP_Y - 10, 1, wl);
+  printAt("32", SP_X - 16, SP_Y - 3, 1, C_DIM);
+  printAt("16", SP_X - 16, SP_Y + SP_H / 2 - 3, 1, C_DIM);
+  tft.drawFastHLine(SP_X, SP_B, NRF_CH * 2, C_EDGE);
+  for (uint8_t c = 0; c < NRF_CH; c += 25) {
+    int16_t x = SP_X + c * 2;
+    tft.drawFastVLine(x, SP_B + 1, 3, C_DIM);
+    char l[6]; snprintf(l, sizeof(l), "%u", 2400 + c);
+    printAt(l, x + 1 - 12, SP_B + 5, 1, C_DIM);
+  }
+  printAt("now", 12, WF_Y, 1, C_DIM);
+  printAt("old", 12, WF_Y + NRF_WF_ROWS * 2 - 8, 1, C_DIM);
+  for (uint8_t c = 0; c < NRF_CH; c++) nrfDrawCol(c, true);
+  nrfCursorCh = -1; nrfDrawCursor(running ? nrfChannel : -1);
+  nrfDrawWaterfall(); nrfWfDirty = false;
+  nrfStat[0] = 0; nrfDrawStat();
+}
+// Incremental 4.1 refresh: decay peaks, redraw only columns that changed.
+void nrfSpectrumTick() {
+  unsigned long now = millis();
+  uint32_t dec = (now - nrfPeakMs) * 64 / 1000;   // 4 levels/s, in x16 units
+  nrfPeakMs = now;
+  for (uint8_t c = 0; c < NRF_CH; c++) {
+    uint16_t f = nrfLvl[c] * 16;
+    nrfPeak16[c] = (nrfPeak16[c] > f + dec) ? nrfPeak16[c] - dec : f;
+    nrfDrawCol(c, false);
+  }
+  nrfDrawCursor(running ? nrfChannel : -1);
+  if (nrfWfDirty) { nrfWfDirty = false; nrfDrawWaterfall(); }
+  nrfDrawStat();
+}
+// The channel the radio is parked on for the running 4.x module.
+uint8_t nrfLiveChannel() {
+  const char* id = liveId();
+  if (!strcmp(id, "4.5")) return NRF_STORE_CH;
+  if (!strcmp(id, "4.6")) return NRF_TEST_CH;
+  return nrfChannel;
+}
+// 4.2-4.4: packets seen per channel over the hop range, with a hop cursor.
+void chartNrfHits(int16_t py, int16_t ph) {
+  const uint8_t n = NRF_SNIFF_END_CH + 1; const int16_t bw = 3, x0 = SP_X;
+  const int16_t top = py + 22, bot = py + ph - 16, h = bot - top;
+  for (uint8_t c = 0; c < n; c++) {
+    int16_t x = x0 + c * bw; uint16_t bg = nrfColBg(c);
+    if (bg != C_PANEL) tft.fillRect(x, top, bw, h, bg);
+    uint16_t v = nrfHitCh[c];
+    if (v) { int16_t bh = v * (h - 2) / (nrfHitMax ? nrfHitMax : 1); if (bh < 2) bh = 2;
+      tft.fillRect(x, bot - bh, bw - 1, bh, v == nrfHitMax ? C_NRF : mix565(C_NRF, C_PANEL, 130)); }
+  }
+  tft.drawFastHLine(x0, bot, n * bw, C_EDGE);
+  for (uint8_t c = 0; c < n; c += 20) {
+    char l[6]; snprintf(l, sizeof(l), "%u", 2400 + c);
+    printAt(l, x0 + c * bw + 1 - 12, bot + 6, 1, C_DIM);
+  }
+  char mx[8]; snprintf(mx, sizeof(mx), "%u", nrfHitMax);
+  printAt(nrfHitMax ? mx : "0", x0 - 6 - (int16_t)strlen(nrfHitMax ? mx : "0") * 6, top - 3, 1, C_DIM);
+  if (!nrfHitMax) printCentered(running ? "hopping, no packets yet" : "tap START to listen",
+                                x0 + n * bw / 2, top + h / 2, 1, C_DIM);
+  if (running) {                                   // hop cursor
+    uint8_t c = nrfLiveChannel(); int16_t cx = x0 + c * bw + 1;
+    tft.fillTriangle(cx - 3, bot + 5, cx + 3, bot + 5, cx, bot + 1, C_TEXT);
+  }
+}
+// 4.5: the 32-slot RAM ring; filled slots tinted, newest slot bright.
+void chartNrfRing(int16_t py, int16_t ph) {
+  const int16_t gap = 3, sw = (W - 28 - 15 * gap) / 16, sh = 22, x0 = 14, y0 = py + 22;
+  uint8_t filled = nrfStored > NRF_RING_SIZE ? NRF_RING_SIZE : (uint8_t)nrfStored;
+  int16_t newest = nrfStored ? (nrfRingHead + NRF_RING_SIZE - 1) % NRF_RING_SIZE : -1;
+  for (uint8_t i = 0; i < NRF_RING_SIZE; i++) {
+    int16_t x = x0 + (i % 16) * (sw + gap), y = y0 + (i / 16) * (sh + 4);
+    bool used = nrfStored >= NRF_RING_SIZE || i < filled;
+    if (i == newest)  tft.fillRoundRect(x, y, sw, sh, 3, C_NRF);
+    else if (used)    tft.fillRoundRect(x, y, sw, sh, 3, mix565(C_NRF, C_PANEL, 90));
+    else              tft.drawRoundRect(x, y, sw, sh, 3, C_EDGE);
+  }
+  char l[44]; snprintf(l, sizeof(l), "ch%u %u MHz  pipe1 E7E7E7E7E7", NRF_STORE_CH, 2400 + NRF_STORE_CH);
+  printAt(l, x0, py + ph - 12, 1, C_MUTED);
+}
+// 4.6: one bar per frame, tall green = acked, short red = no ack.
+void chartNrfAck(int16_t py, int16_t ph) {
+  const int16_t x0 = 14, pw = W - 28, top = py + 22, bot = py + ph - 16, h = bot - top;
+  const int16_t bw = pw / GHN;
+  tft.drawFastHLine(x0, bot, pw, C_EDGE);
+  if (!nrfAckN) printCentered(running ? "sending..." : "tap START to send test frames", x0 + pw / 2, top + h / 2, 1, C_DIM);
+  for (uint8_t i = 0; i < nrfAckN; i++) {
+    uint8_t v = nrfAck[(nrfAckH + GHN - nrfAckN + i) % GHN];
+    int16_t bh = v ? h - 2 : h / 3;
+    tft.fillRect(x0 + i * bw, bot - bh, bw > 1 ? bw - 1 : 1, bh, v ? C_OK : C_ERR);
+  }
+  char l[44]; snprintf(l, sizeof(l), "ch%u %u MHz  CYBER  sent %lu  ack %lu",
+                       NRF_TEST_CH, 2400 + NRF_TEST_CH, nrfAckTotal, nrfAckOk);
+  printAt(l, x0, bot + 5, 1, C_MUTED);
+}
+void drawNrfCharts() {
+  tft.fillRect(0, LV_Y0, W, (H - 14) - LV_Y0, C_BG);
+  const char* id = liveId();
+  if (!strcmp(id, "4.1")) { drawNrfSpectrum(); return; }
+  const int16_t p1 = LV_Y0 + 2, h1 = 88, p2 = p1 + h1 + 4, h2 = (H - 14) - 2 - p2;
+  char st[24];
+  if (!strcmp(id, "4.6")) {
+    panelFrame(p1, h1, "LINK  ACK PER FRAME", C_NRF);
+    if (nrfAckTotal) snprintf(st, sizeof(st), "ack %lu%%", nrfAckOk * 100 / nrfAckTotal); else snprintf(st, sizeof(st), "--");
+    panelStat(p1, st, nrfAckTotal ? (nrfAckOk * 2 >= nrfAckTotal ? C_OK : C_WARN) : C_DIM);
+    chartNrfAck(p1, h1);
+  } else if (!strcmp(id, "4.5")) {
+    panelFrame(p1, h1, "RING BUFFER  32 SLOTS", C_NRF);
+    snprintf(st, sizeof(st), "stored %lu", nrfStored); panelStat(p1, st, C_NRF);
+    chartNrfRing(p1, h1);
+  } else {
+    panelFrame(p1, h1, "PACKETS PER CHANNEL", C_NRF);
+    uint8_t c = nrfLiveChannel();
+    if (running) snprintf(st, sizeof(st), "on ch%u %u", c, 2400 + c); else snprintf(st, sizeof(st), "--");
+    panelStat(p1, st, running ? C_TEXT : C_DIM);
+    chartNrfHits(p1, h1);
+  }
+  const char* t2 = !strcmp(id, "4.3") ? "HITS / s" : !strcmp(id, "4.5") ? "STORED / s"
+                 : !strcmp(id, "4.6") ? "FRAMES / s" : "PACKETS / s";
+  panelFrame(p2, h2, t2, C_NRF);
+  snprintf(st, sizeof(st), "%u/s", gRateLast()); panelStat(p2, st, C_NRF);
+  chartRate(14, p2 + 18, W - 28, h2 - 24, C_NRF);
 }
 
 // ===================================================================
@@ -1730,7 +2336,7 @@ void drawScreen() {
       if (haveSavedCal) snprintf(line, sizeof(line), "Calibration saved, max error %.1f px", savedErr);
       else snprintf(line, sizeof(line), "Calibration: default (not calibrated)");
       printAt(line, 12, 164, 1, C_TEXT);
-      printAt("Wi-Fi + BLE are live on-deck.", 12, 182, 1, C_MUTED);
+      printAt("Wi-Fi, BLE + nRF24 are live on-deck.", 12, 182, 1, C_MUTED);
       printAt("USB Web Serial works at the same time.", 12, 198, 1, C_MUTED);
       printAt("Hold the screen at power-on to recalibrate.", 12, 214, 1, C_MUTED);
       for (uint8_t i = 0; i < btnCount; i++) drawButton(i, false);
@@ -1836,8 +2442,11 @@ void syncScreenToSerial(const char* module) {
     if (!SUBS[si].live) continue;
     for (uint8_t mi = 0; mi < SUBS[si].count; mi++) {
       if (!strcmp(SUBS[si].mods[mi].id, module)) {
-        curSub = si; curMod = mi; running = true; liveStartMs = millis(); rowsClear();
-        setStatus("Started from USB", C_MUTED);
+        curSub = si; curMod = mi; liveStartMs = millis(); rowsClear();
+        running = activeModule != "NONE";          // false if the start failed
+        if (!strcmp(module, "4.1")) liveGraph = true;   // spectrum opens on the graph
+        if (running) setStatus("Started from USB", C_MUTED);
+        else { char l[48]; snprintf(l, sizeof(l), "ERR %s", friendlyStatus(lastErrMsg)); setStatus(l, C_ERR); }
         goTo(SCR_LIVE);
         return;
       }
@@ -1910,6 +2519,7 @@ void startLiveModule() {
   rowsClear();
   running = true;
   startModule(String(SUBS[curSub].mods[curMod].id));   // the real module
+  if (activeModule == "NONE") running = false;          // start failed (error already on the status line)
 }
 void stopLiveModule() {
   if (activeModule != "NONE") stopModule();
@@ -1924,6 +2534,7 @@ void doAction(uint8_t i) {
       break;
     case ACT_OPEN_MOD:
       curMod = b.arg; running = false; rowsClear(); statusLine[0] = 0;
+      if (!strcmp(liveId(), "4.1")) liveGraph = true;   // spectrum opens on the graph
       goTo(SCR_LIVE);
       break;
     case ACT_OPEN_SETUP: goTo(SCR_SETUP); break;
@@ -1970,7 +2581,7 @@ void doAction(uint8_t i) {
     case ACT_CAL_SAVE:   saveCalibration(); goTo(calReturn); break;
     case ACT_TOGGLE:
       if (running) { stopLiveModule(); setStatus("Halted", C_MUTED); }
-      else         { startLiveModule(); setStatus("Started", C_OK); }
+      else         { startLiveModule(); if (running) setStatus("Started", C_OK); }
       goTo(SCR_LIVE);
       break;
     case ACT_BACK:
@@ -2041,11 +2652,14 @@ void setup() {
   pBLEScan->setInterval(100);
   pBLEScan->setWindow(99);
   pAdvertising = BLEDevice::getAdvertising();
-  Serial.println("\n[+] Cyberdeck on-deck (Wi-Fi + BLE) online.");
+  Serial.println("\n[+] Cyberdeck on-deck (Wi-Fi + BLE + nRF24) online.");
 
   // display + touch
   pinMode(TFT_CS, OUTPUT);   digitalWrite(TFT_CS, HIGH);
   pinMode(TOUCH_CS, OUTPUT); digitalWrite(TOUCH_CS, HIGH);
+  pinMode(NRF_CSN_PIN, OUTPUT); digitalWrite(NRF_CSN_PIN, HIGH);   // radio off the bus
+  pinMode(NRF_CE_PIN, OUTPUT);  digitalWrite(NRF_CE_PIN, LOW);
+  pinMode(NRF_IRQ_PIN, INPUT_PULLUP);
   loadUiPrefs();
   applyTheme(lightMode);
   if (TFT_BL >= 0) { pinMode(TFT_BL, OUTPUT); setBacklight(); }
@@ -2079,6 +2693,7 @@ void loop() {
   }
 
   // a module that self-completes (e.g. BLE 2.6) -> refresh the live view
+  if (running && activeModule == "NONE") running = false;   // stopped from USB
   static bool prevRun = false;
   if (screen == SCR_LIVE && prevRun && !running) goTo(SCR_LIVE);
   prevRun = running;
@@ -2094,7 +2709,14 @@ void loop() {
   // throttled LIVE redraws so a Wi-Fi burst can't thrash the TFT
   if (screen == SCR_LIVE) {
     if (!liveGraph) { if (listDirty && now - lastListDraw >= 120) { lastListDraw = now; listDirty = false; drawLog(); } }
-    else            { if (graphDirty && now - lastGraphDraw >= 160) { lastGraphDraw = now; graphDirty = false; drawCharts(); } }
+    else {
+      if (curSub == 2 && running && nrfLiveChannel() != nrfShownHop) { nrfShownHop = nrfLiveChannel(); graphDirty = true; }
+      if (graphDirty && now - lastGraphDraw >= 160) {
+        lastGraphDraw = now; graphDirty = false;
+        if (curSub == 2 && !strcmp(liveId(), "4.1")) nrfSpectrumTick();   // only changed columns
+        else drawCharts();
+      }
+    }
     if (statusDirty) { statusDirty = false; drawStatusLine(); }
     if (now - lastSeenDraw >= 500) { lastSeenDraw = now; drawSeen(); }
   }
