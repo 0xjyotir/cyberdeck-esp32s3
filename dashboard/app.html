@@ -12,19 +12,33 @@
 </head>
 <body class="app">
 
-  <header class="app-header">
-    <div class="left">
-      <span class="live-dot" id="live-dot"></span>
-      <h1>CYBERDECK<span>/s3</span></h1>
+  <!-- JetBrains-style top toolbar, rendered in the Apple-dark material -->
+  <header class="toolbar">
+    <span class="tb-burger" aria-hidden="true">☰</span>
+    <div class="tb-proj">cyberdeck-esp32s3 <span class="ca">▾</span></div>
+    <a class="tb-branch" href="index.html" title="Back to the welcome page">⌂ Home</a>
+
+    <div class="tb-spacer"></div>
+
+    <div class="runcfg" title="Active module">
+      <span class="mdot" id="run-dot"></span>
+      <span class="nm" id="run-name">1.1 Wi-Fi Scan</span>
     </div>
-    <div class="right">
-      <a class="home-link" href="index.html">&larr; Home</a>
-      <span class="conn-pill" id="conn-status">DISCONNECTED</span>
-      <button class="btn btn-primary" id="serial-btn" onclick="toggleSerial()">Connect USB serial</button>
+    <div class="runbtns">
+      <button class="ib play" onclick="sendCommand('START')" title="Start module" aria-label="Start module">▶</button>
+      <button class="ib stop" onclick="sendCommand('STOP')" title="Halt module" aria-label="Halt module">■</button>
     </div>
+
+    <div class="tb-spacer"></div>
+
+    <span class="live-dot" id="live-dot"></span>
+    <span class="conn-pill" id="conn-status">DISCONNECTED</span>
+    <button class="tb-connect" id="serial-btn" onclick="toggleSerial()">Connect USB serial</button>
   </header>
 
   <div class="app-body">
+
+    <!-- source list (subsystem tree) -->
     <aside class="sidebar">
 
       <div class="s-wifi">
@@ -69,6 +83,20 @@
         </div>
       </div>
 
+      <div class="s-rfid">
+        <button class="sub-toggle" aria-expanded="false" aria-controls="list-rfid" onclick="toggleSub(this)">
+          <span>Subsystem 5 · RFID</span><span class="chev">▾</span>
+        </button>
+        <div class="sub-list" id="list-rfid" hidden>
+          <button class="mod-btn" data-mod="5.1" onclick="switchModule('5.1', this)">5.1 Card Fingerprint</button>
+          <button class="mod-btn" data-mod="5.2" onclick="switchModule('5.2', this)">5.2 Memory Dump</button>
+          <button class="mod-btn" data-mod="5.3" onclick="switchModule('5.3', this)">5.3 Default-Key Audit</button>
+          <button class="mod-btn" data-mod="5.4" onclick="switchModule('5.4', this)">5.4 Clone to Magic Card</button>
+          <button class="mod-btn" data-mod="5.5" onclick="switchModule('5.5', this)">5.5 NDEF Read / Write</button>
+          <button class="mod-btn" data-mod="5.6" onclick="switchModule('5.6', this)">5.6 Reader Monitor</button>
+        </div>
+      </div>
+
       <div class="s-ir">
         <button class="sub-toggle" aria-expanded="false" aria-controls="list-ir" onclick="toggleSub(this)">
           <span>Subsystem 7 · Infrared</span><span class="chev">▾</span>
@@ -85,21 +113,37 @@
 
     </aside>
 
+    <!-- drag to resize the sidebar (max 75% of the width) -->
+    <div class="resizer resizer-col" role="separator" aria-orientation="vertical" aria-label="Resize sidebar" tabindex="0" title="Drag to resize · double-click to reset"></div>
+
+    <!-- working column -->
     <main class="main">
       <section class="module-bar" id="module-bar">
         <div>
           <h2 id="module-title">MODULE 1.1: ACTIVE WIFI SCANNER</h2>
           <p id="module-desc">Scans local airspace for active BSSIDs, SSIDs, channels, and RSSI metrics.</p>
         </div>
-        <div class="module-actions">
-          <button class="act act-start" onclick="sendCommand('START')">Start module</button>
-          <button class="act act-stop" onclick="sendCommand('STOP')">Halt</button>
-        </div>
+        <span class="mod-count">live feed</span>
       </section>
 
       <div class="panels">
-        <section class="panel">
-          <h3>Live telemetry feed</h3>
+        <section class="panel panel-telemetry">
+          <div class="panel-hd">
+            <h3>Live telemetry feed</h3>
+            <button class="clear-btn" onclick="clearTelemetry()" title="Clear the telemetry view" aria-label="Clear telemetry">Clear</button>
+          </div>
+          <!-- 4.1 spectrum graph (spectrum.js); shown in place of the table for 4.1 -->
+          <div class="spectrum" id="spectrum" hidden>
+            <div class="spectrum-meta">
+              <span id="spec-sweep">sweep #0</span>
+              <span id="spec-peak">peak · quiet</span>
+              <span class="spec-note" id="spec-note"></span>
+            </div>
+            <div class="spectrum-stage">
+              <canvas aria-label="nRF24 2.4 GHz spectrum, channels 0 to 125" role="img"></canvas>
+              <div class="spectrum-tip" hidden></div>
+            </div>
+          </div>
           <div class="table-scroll">
             <table>
               <thead><tr id="table-headers">
@@ -112,8 +156,16 @@
           </div>
         </section>
 
-        <section class="panel">
-          <h3>Hardware serial stream</h3>
+        <!-- drag to resize telemetry vs. serial console (each max 75% of the height) -->
+        <div class="resizer resizer-row" role="separator" aria-orientation="horizontal" aria-label="Resize serial console" tabindex="0" title="Drag to resize · double-click to reset"></div>
+
+        <section class="panel panel-serial">
+          <div class="serial-hd">
+            <span class="tab on"><span class="d"></span> Serial</span>
+            <span class="tab">Telemetry</span>
+            <span class="tab">Log</span>
+            <button class="clear-btn" onclick="clearConsole()" title="Clear the serial console" aria-label="Clear serial console">Clear</button>
+          </div>
           <div class="console" id="console">
             <div class="sys">[system] Dashboard interface ready. Connect USB serial to begin.</div>
           </div>
@@ -122,6 +174,44 @@
     </main>
   </div>
 
+  <!-- status bar -->
+  <footer class="statusbar">
+    <span class="sb-item" id="sb-mod">Module 1.1 · Wi-Fi Scan</span>
+    <span class="sb-item">⎇ main</span>
+    <span class="sb-spacer"></span>
+    <span class="sb-item mono">115200</span>
+    <span class="sb-item mono">UTF-8</span>
+    <span class="sb-item"><span class="sb-dot"></span> Ready</span>
+  </footer>
+
+  <script src="assets/js/spectrum.js"></script>
   <script src="assets/js/dashboard.js"></script>
+  <script src="assets/js/resize.js"></script>
+  <script>
+    /* Cosmetic only: mirror the active module into the toolbar run-config chip
+       and the status bar. Wraps the existing switchModule without changing it;
+       every lookup is guarded so it can never break the dashboard. */
+    (function () {
+      var orig = window.switchModule;
+      if (typeof orig !== "function") return;
+      var accent = { "1": "--wifi", "2": "--ble", "4": "--nrf", "5": "--rfid", "7": "--ir" };
+      window.switchModule = function (modId, btn) {
+        orig(modId, btn);
+        try {
+          var label = (btn && btn.textContent ? btn.textContent : modId).trim();
+          var run = document.getElementById("run-name");
+          var dot = document.getElementById("run-dot");
+          var sb = document.getElementById("sb-mod");
+          if (run) run.textContent = label;
+          if (sb) sb.textContent = "Module " + label;
+          if (dot) {
+            var c = "var(" + (accent[String(modId).charAt(0)] || "--wifi") + ")";
+            dot.style.background = c;
+            dot.style.boxShadow = "0 0 8px " + c;
+          }
+        } catch (e) {}
+      };
+    })();
+  </script>
 </body>
 </html>

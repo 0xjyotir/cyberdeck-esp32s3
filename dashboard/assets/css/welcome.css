@@ -30,6 +30,8 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
 .hero h1 { font-family: var(--display); font-size: clamp(38px, 7.2vw, 88px); letter-spacing: -.03em; font-weight: 800; }
 .hero h1 .word { display: inline-block; }
 .hero h1 em { font-style: normal; color: var(--wifi); }
+.byline { margin-top: 18px; font: 500 13px/1.4 var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--faint); }
+.byline b { color: var(--text); font-weight: 600; }
 .lede { max-width: 56ch; margin: 22px auto 0; color: var(--mute); font-size: clamp(16px, 2.2vw, 20px); }
 .cta { display: flex; gap: 14px; justify-content: center; margin-top: 34px; flex-wrap: wrap; }
 .spec { display: flex; gap: 28px; justify-content: center; margin-top: 46px; flex-wrap: wrap; font: 500 13px/1 var(--mono); color: var(--faint); letter-spacing: .05em; }
@@ -45,7 +47,7 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
 .stat:nth-child(1) .n { color: var(--wifi); }
 .stat:nth-child(2) .n { color: var(--ble); }
 .stat:nth-child(3) .n { color: var(--ir); }
-.stat:nth-child(4) .n { color: var(--nfc); }
+.stat:nth-child(4) .n { color: var(--tft); }
 
 /* facts */
 section.facts { padding-block: clamp(70px, 12vw, 140px); }
@@ -57,8 +59,12 @@ section.facts { padding-block: clamp(70px, 12vw, 140px); }
 .card h3 { font-size: 21px; margin-top: 14px; font-weight: 700; }
 .card p { margin-top: 10px; color: var(--mute); font-size: 14.5px; }
 .card .bar-line { position: absolute; left: 0; top: 26px; bottom: 26px; width: 3px; border-radius: 3px; background: var(--chip, var(--line2)); }
+.card.card-wide { grid-column: 1 / -1; display: flex; align-items: center; gap: 36px; flex-wrap: wrap; }
+.card-wide .cw-head { flex: 0 0 auto; }
+.card-wide h3 { margin-top: 8px; }
+.card-wide p { margin-top: 0; flex: 1 1 340px; max-width: 640px; }
 .c-wifi { --chip: var(--wifi); } .c-ble { --chip: var(--ble); } .c-ir { --chip: var(--ir); }
-.c-nrf { --chip: var(--nrf); } .c-nfc { --chip: var(--nfc); }
+.c-nrf { --chip: var(--nrf); } .c-rfid { --chip: var(--rfid); } .c-tft { --chip: var(--tft); }
 
 footer { border-top: 1px solid var(--line); padding-block: 40px; color: var(--faint); font-size: 13.5px; }
 footer .wrap { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
@@ -69,4 +75,73 @@ footer .wrap { display: flex; justify-content: space-between; gap: 16px; flex-wr
 @media (max-width: 620px) {
   .strip .wrap { grid-template-columns: repeat(2, 1fr); }
   .stat:nth-child(3) { border-left: 0; }
+}
+
+/* ── Field manual: the in-depth per-function guide below the subsystem cards.
+   TOC-style accordion rows (native <details>) grouped by subsystem; each row
+   expands to a description, a telemetry field glossary, a sample line and a
+   link to that function's standalone .ino. Blueprint tokens throughout. */
+section.guide { padding-block: 0 clamp(70px, 12vw, 130px); }
+.guide .head { max-width: 72ch; }
+.guide h2 { font-size: clamp(27px, 4.4vw, 46px); letter-spacing: -.02em; margin-top: 14px; }
+.guide-lede { margin-top: 18px; color: var(--mute); font-size: clamp(15px, 2vw, 18px); max-width: 68ch; }
+.guide code { font-family: var(--code); font-size: .9em; color: var(--text);
+  background: var(--panel2); border: 1px solid var(--line); border-radius: 5px; padding: 1px 6px; }
+
+.guide-wrap { margin-top: 44px; display: grid; gap: 30px; }
+
+.guide-group { --chip: var(--line2); }
+.c-wifi { --chip: var(--wifi); } .c-ble { --chip: var(--ble); }
+.c-nrf { --chip: var(--nrf); } .c-ir { --chip: var(--ir); } .c-rfid { --chip: var(--rfid); }
+.guide-group-head { display: flex; align-items: baseline; gap: 14px; padding-bottom: 14px;
+  border-bottom: 1px dashed var(--line2); }
+.gg-num { font: 500 12px/1 var(--mono); letter-spacing: .14em; color: var(--chip);
+  border: 1px solid var(--chip); border-radius: 999px; padding: 6px 10px; }
+.guide-group-head h3 { font-size: 20px; font-weight: 700; color: var(--text); }
+.gg-blurb { margin-top: 14px; color: var(--mute); font-size: 14.5px; max-width: 74ch; }
+
+.guide-list { margin-top: 16px; display: grid; gap: 10px; }
+.guide-note { color: var(--mute); font-size: 14.5px; margin-top: 16px;
+  padding: 18px 20px; background: var(--panel); border: 1px dashed var(--line2); border-radius: 12px; }
+
+.guide-item { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+.guide-item[open] { border-color: var(--chip); }
+.guide-item summary { list-style: none; cursor: pointer; display: flex; align-items: center; gap: 16px;
+  padding: 16px 20px; transition: background .15s; }
+.guide-item summary::-webkit-details-marker { display: none; }
+.guide-item summary:hover { background: var(--panel2); }
+.guide-item summary:focus-visible { outline: 2px solid var(--chip); outline-offset: -2px; }
+.gi-id { font: 600 13px/1 var(--mono); letter-spacing: .04em; color: var(--chip);
+  min-width: 34px; }
+.gi-name { font-weight: 600; font-size: 16px; color: var(--text); flex: 1; }
+.gi-caret { font: 400 22px/1 var(--mono); color: var(--chip); transition: transform .2s; }
+.guide-item[open] .gi-caret { transform: rotate(45deg); }
+
+.gi-body { padding: 4px 20px 22px; border-top: 1px dashed var(--line); }
+.gi-what { color: var(--mute); font-size: 14.5px; line-height: 1.65; margin-top: 16px; max-width: 76ch; }
+.gi-sub { font: 500 11px/1 var(--mono); letter-spacing: .14em; text-transform: uppercase;
+  color: var(--faint); margin-top: 22px; }
+.gi-fields { margin-top: 12px; display: grid; gap: 8px; }
+.gi-fields .fld { display: grid; grid-template-columns: 120px 1fr; gap: 14px; align-items: baseline; }
+.gi-fields dt { font-family: var(--code); font-size: 13px; color: var(--chip); font-weight: 600; }
+.gi-fields dd { margin: 0; color: var(--mute); font-size: 14px; line-height: 1.55; }
+.gi-fields dd code, .gi-fields dd em { font-style: normal; }
+.gi-fields dd em { color: var(--text); }
+
+.gi-ex { margin-top: 12px; background: var(--bg2); border: 1px solid var(--line); border-radius: 8px;
+  padding: 14px 16px; overflow-x: auto; }
+.gi-ex code { font-family: var(--code); font-size: 12.5px; line-height: 1.5; color: var(--wifi);
+  background: none; border: 0; padding: 0; white-space: pre; }
+
+.gi-src { display: inline-flex; align-items: center; gap: 9px; margin-top: 22px;
+  font: 600 13.5px/1 var(--body); color: var(--text); text-decoration: none;
+  border: 1px solid var(--chip); border-radius: 999px; padding: 10px 18px; transition: background .2s, color .2s; }
+.gi-src code { background: none; border: 0; padding: 0; color: inherit; }
+.gi-src:hover { background: var(--chip); color: #041325; }
+.gi-src .arrow { transition: transform .25s; }
+.gi-src:hover .arrow { transform: translateX(3px); }
+
+@media (max-width: 560px) {
+  .gi-fields .fld { grid-template-columns: 1fr; gap: 2px; }
+  .gi-fields dt { font-size: 12.5px; }
 }

@@ -3,7 +3,7 @@
    Restyle only: every id/class the Web Serial logic in dashboard.js depends on
    is preserved. Everything here is scoped to body.app so the Blueprint landing
    page (which never loads this file) is untouched. Reuses the subsystem hues
-   (--wifi/--ble/--ir/--nrf/--nfc) and --ok/--err from base.css. */
+   (--wifi/--ble/--ir/--nrf) and --ok/--err from base.css. */
 
 html, body { height: 100%; }
 
@@ -95,7 +95,7 @@ body.app > * { position: relative; z-index: 1; }
 .mod-btn:hover { background: rgba(255,255,255,.05); color: var(--txt); }
 .mod-btn.active { background: linear-gradient(180deg,#1f90ff,var(--blue)); color: #fff; border-color: transparent; box-shadow: 0 4px 12px rgba(10,132,255,.38); }
 .s-wifi { --chip: var(--wifi); } .s-ble { --chip: var(--ble); } .s-ir { --chip: var(--ir); }
-.s-nrf { --chip: var(--nrf); } .s-nfc { --chip: var(--nfc); }
+.s-nrf { --chip: var(--nrf); } .s-rfid { --chip: var(--rfid); }
 
 /* working column: telemetry (grows) + serial (pinned bottom) */
 .main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 12px; }
@@ -116,7 +116,8 @@ body.app > * { position: relative; z-index: 1; }
 .panel { padding: 0; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
 .panel-telemetry { flex: 1; }
 .panel-serial { height: 184px; flex-shrink: 0; }
-.panel > h3 { font: 500 11px/1 var(--ui); letter-spacing: .08em; text-transform: uppercase; color: var(--txt3); padding: 14px 16px 10px; margin: 0; }
+.panel-hd { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding-right: 10px; }
+.panel > h3, .panel-hd > h3 { font: 500 11px/1 var(--ui); letter-spacing: .08em; text-transform: uppercase; color: var(--txt3); padding: 14px 16px 10px; margin: 0; }
 
 .table-scroll { flex: 1; min-height: 0; overflow: auto; margin: 0 6px 6px; border-radius: 10px; }
 table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 13px; }
@@ -124,6 +125,24 @@ thead th { position: sticky; top: 0; background: rgba(22,22,24,.92); backdrop-fi
 tbody td { padding: 10px 14px; border-top: 1px solid var(--hair); font-family: var(--code); font-size: 12.5px; color: var(--txt); vertical-align: top; }
 tbody tr:hover td { background: rgba(255,255,255,.035); }
 .empty { text-align: center; color: var(--txt3); padding: 26px; font-family: var(--ui); }
+.table-scroll[hidden] { display: none; }
+
+/* Clear buttons (telemetry header + serial header). View-only, never talk to the board. */
+.clear-btn { font: 500 11.5px/1 var(--ui); color: var(--txt2); background: transparent; border: 1px solid var(--hair); padding: 5px 10px; border-radius: 8px; cursor: pointer; transition: background .15s, color .15s; }
+.clear-btn:hover { background: rgba(255,255,255,.06); color: var(--txt); }
+.serial-hd .clear-btn { margin-left: auto; }
+
+/* nRF24 4.1 spectrum graph (drawn by spectrum.js) */
+.spectrum { flex: 1; min-height: 0; display: flex; flex-direction: column; margin: 0 6px 6px; padding: 0 8px 8px; border-radius: 10px; background: var(--inset); }
+.spectrum[hidden] { display: none; }
+.spectrum-meta { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; padding: 9px 4px 4px; font: 500 11.5px/1.3 var(--code); color: var(--txt2); }
+.spectrum-meta #spec-peak { color: var(--nrf); }
+.spec-note { margin-left: auto; color: var(--txt2); }
+.spec-note.err { color: var(--red); }
+.spectrum-stage { position: relative; flex: 1; min-height: 160px; }
+.spectrum-stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; cursor: crosshair; }
+.spectrum-tip { position: absolute; pointer-events: none; white-space: nowrap; font: 500 11px/1 var(--code); color: var(--txt); background: rgba(22,22,24,.94); border: 1px solid var(--hair); padding: 6px 8px; border-radius: 7px; box-shadow: 0 6px 18px rgba(0,0,0,.4); }
+.spectrum-tip[hidden] { display: none; }
 
 /* serial panel header (tabs) + console */
 .serial-hd { display: flex; align-items: center; gap: 4px; padding: 8px 10px; border-bottom: 1px solid var(--hair); }

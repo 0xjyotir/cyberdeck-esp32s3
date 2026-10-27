@@ -11,8 +11,8 @@
 
   /* ---- subsystem accent, used for the module panel + active sidebar item ---- */
   const GROUP = (m) => m.startsWith("1.") ? "wifi" : m.startsWith("2.") ? "ble"
-    : m.startsWith("4.") ? "nrf" : m.startsWith("5.") ? "nfc" : m.startsWith("7.") ? "ir" : "wifi";
-  const ACCENT = { wifi: "--wifi", ble: "--ble", ir: "--ir", nrf: "--nrf", nfc: "--nfc" };
+    : m.startsWith("4.") ? "nrf" : m.startsWith("5.") ? "rfid" : m.startsWith("7.") ? "ir" : "wifi";
+  const ACCENT = { wifi: "--wifi", ble: "--ble", ir: "--ir", nrf: "--nrf", rfid: "--rfid" };
 
   /* ---- collapsible subsystems ---- */
   window.toggleSub = function (btn) {
@@ -109,6 +109,17 @@
     box.scrollTop = box.scrollHeight;
   }
 
+  /* ---- Clear buttons: view-only, the board keeps streaming ---- */
+  const EMPTY_ROW = `<tr><td colspan="4" class="empty">Awaiting hardware telemetry stream…</td></tr>`;
+  window.clearTelemetry = function () {
+    $("telemetry-body").innerHTML = EMPTY_ROW;
+    if (window.Spectrum) Spectrum.reset();
+  };
+  window.clearConsole = function () {
+    $("console").innerHTML = "";
+    appendLog("[system] Console cleared.", "sys");
+  };
+
   /* ---- infrared telemetry views (unchanged) ---- */
   const dash = (v) => (v !== undefined && v !== null) ? v : "-";
   const hex = (v) => v ? "0x" + String(v).toUpperCase() : "-";
@@ -154,12 +165,57 @@
       row: d => ["CH " + dash(d.ch), dash(d.addr), dash(d.sent), d.ack ? "ACK" : "no ack"] }
   };
 
+  /* ---- RC522 RFID (13.56 MHz) telemetry views ---- */
+  const RFID_VIEWS = {
+    "5.1": { headers: ["UID", "Card Type", "ATQA", "SAK"],
+      row: d => [dash(d.uid), dash(d.type), dash(d.atqa), dash(d.sak)] },
+    "5.2": { headers: ["Sector", "Block", "Data (hex)", "Auth"],
+      row: d => d.done
+        ? [`${dash(d.blocks_read)} read`, `${dash(d.blocks_locked)} locked`, "—", "DUMP DONE"]
+        : ["S" + dash(d.sector), dash(d.block), d.auth === "ok" ? dash(d.data) : "—",
+           d.auth === "ok" ? "default key" : "locked"] },
+    "5.3": { headers: ["Sector", "Result", "Key Found"],
+      row: d => d.done
+        ? [`GRADE ${dash(d.grade)}`, `${dash(d.weak_sectors)}/${dash(d.total_sectors)} weak`, "AUDIT DONE"]
+        : ["S" + dash(d.sector), d.result === "default_key" ? "default key" : "protected",
+           dash(d.key_found)] },
+    "5.4": { headers: ["Stage", "UID", "Blocks", "Verify / Type"],
+      row: d => d.stage === "clone"
+        ? ["clone", dash(d.uid), `${dash(d.blocks_written)} written`, `${dash(d.verify)} · ${dash(d.target_type)}`]
+        : ["source read", dash(d.uid), `${dash(d.blocks_cached)} cached`, "present target"] },
+    "5.5": { headers: ["Record", "Payload / Bytes", "Tag", "Verify"],
+      row: d => d.bytes_written !== undefined
+        ? [dash(d.record_type), `${dash(d.bytes_written)} B written`, "—", dash(d.verify)]
+        : [dash(d.record_type), dash(d.payload), dash(d.tag_type), dash(d.capacity) + " B"] },
+    "5.6": { headers: ["UID", "Card Type", "Time", "Seen"],
+      row: d => d.summary
+        ? [`${dash(d.distinct)} distinct`, `${dash(d.total_reads)} total`, "—", "SUMMARY"]
+        : [dash(d.uid), dash(d.type),
+           d.t_ms !== undefined ? (Number(d.t_ms) / 1000).toFixed(1) + " s" : "-",
+           "×" + dash(d.seen_count)] }
+  };
+
   function updateTelemetry(data) {
     const tbody = $("telemetry-body");
-    if (tbody.querySelector(".empty")) tbody.innerHTML = "";
     const msg = data.data || data;
     const mod = data.module || currentModule;
     if (mod !== currentModule && mod !== "SYS") return;
+
+    // 4.1 renders as the spectrum graph instead of table rows; the raw JSON
+    // line has already been printed to the serial console by handleIncoming().
+    if (currentModule === "4.1" && window.Spectrum) {
+      if (msg.ch !== undefined) { Spectrum.push(msg.ch, msg.level); return; }
+      if (msg.msg !== undefined && msg.msg !== "module_active" && msg.msg !== "module_halted") {
+        const isError = data.status === "error";
+        const label = msg.msg === "nrf_not_found"
+          ? "nRF24 not found: check CE=6 CSN=7 SCK=12 MISO=13 MOSI=11, 3.3 V and the 10 µF cap."
+          : msg.msg;
+        Spectrum.note(`[${mod}] ${isError ? "ERROR" : "STATUS"}: ${label}`, isError);
+      }
+      return;
+    }
+
+    if (tbody.querySelector(".empty")) tbody.innerHTML = "";
 
     const tr = document.createElement("tr");
     const isStatusOnly = msg.msg !== undefined && Object.keys(msg).length === 1;
@@ -171,6 +227,20 @@
         ? "No IR code captured yet: run 7.2, 7.4 or 7.5 and point a remote at the receiver first."
         : msg.msg === "ledc_attach_failed"
         ? "Could not start the 38kHz carrier on the IR LED pin."
+        : msg.msg === "rc522_not_found"
+        ? "RC522 not found: check SDA=10 RST=9 SCK=12 MOSI=11 MISO=13, 3.3 V only (5 V kills it)."
+        : msg.msg === "ownership_not_acknowledged"
+        ? "Clone writes are disabled. They stay off until the firmware's RFID_OPERATOR_OWNS_CARDS gate is set to 1 for cards you own."
+        : msg.msg === "not_a_magic_card"
+        ? "Target is not a writable-UID magic card (Gen1a/Gen2). Clone needs a magic card you own."
+        : msg.msg === "unsupported_card"
+        ? "This card type isn't supported by that module (e.g. DESFire / 14443A-4 has no open dump)."
+        : msg.msg === "no_ndef"
+        ? "No NDEF URI/Text record found on this tag."
+        : msg.msg === "source_locked"
+        ? "Source card didn't open with the default key, so nothing was cached."
+        : msg.msg === "write_failed"
+        ? "NDEF write failed: the tag may be read-only or not an NTAG/Ultralight."
         : msg.msg;
       tr.innerHTML = `<td colspan="4" style="color:${isError ? "var(--err)" : "var(--mute)"}">[${mod}] ${isError ? "ERROR" : "STATUS"}: ${label}</td>`;
     } else if (IR_VIEWS[currentModule]) {
@@ -183,6 +253,11 @@
       const styles = ["color:var(--nrf);font-weight:700", "color:var(--text)", "color:var(--text)", "color:var(--mute);font-size:12px"];
       tr.innerHTML = cells.map((c, i) => `<td style="${styles[i] || "color:var(--text)"}">${c}</td>`).join("");
       if (NRF_VIEWS[currentModule].live) tbody.innerHTML = "";
+    } else if (RFID_VIEWS[currentModule]) {
+      const cells = RFID_VIEWS[currentModule].row(msg);
+      const styles = ["color:var(--rfid);font-weight:700", "color:var(--text)", "color:var(--text)", "color:var(--mute);font-size:12px"];
+      tr.innerHTML = cells.map((c, i) => `<td style="${styles[i] || "color:var(--text)"}">${c}</td>`).join("");
+      if (RFID_VIEWS[currentModule].live) tbody.innerHTML = "";
     } else if (currentModule.startsWith("1.")) {
       const d = msg;
       tr.innerHTML = `
@@ -212,6 +287,9 @@
     "4.1": "MODULE 4.1: 2.4GHZ SPECTRUM SCAN", "4.2": "MODULE 4.2: nRF24 PACKET SNIFFER",
     "4.3": "MODULE 4.3: nRF24 ADDRESS DISCOVERY", "4.4": "MODULE 4.4: nRF24 PROTOCOL ANALYSIS",
     "4.5": "MODULE 4.5: nRF24 PACKET STORAGE", "4.6": "MODULE 4.6: nRF24 LAB TRANSMITTER",
+    "5.1": "MODULE 5.1: RFID CARD FINGERPRINT", "5.2": "MODULE 5.2: RFID MEMORY DUMP",
+    "5.3": "MODULE 5.3: RFID DEFAULT-KEY AUDIT", "5.4": "MODULE 5.4: RFID CLONE TO MAGIC CARD",
+    "5.5": "MODULE 5.5: RFID NDEF READ / WRITE", "5.6": "MODULE 5.6: RFID READER MONITOR",
     "7.1": "MODULE 7.1: 38KHZ CARRIER MODULATION", "7.2": "MODULE 7.2: IR PULSE LEARNING",
     "7.3": "MODULE 7.3: IR SIGNAL REPLAY", "7.4": "MODULE 7.4: IR PROTOCOL DECODE",
     "7.5": "MODULE 7.5: IR SIGNAL ANALYSIS", "7.6": "MODULE 7.6: IR LED CIRCUIT TEST"
@@ -235,6 +313,12 @@
     "4.4": "Captures packets and reports length, data rate and a traffic-type guess.",
     "4.5": "Buffers captured packets in RAM and tracks a running stored count.",
     "4.6": "Low-power test transmitter — sends to your own nRF24 node for link/range testing.",
+    "5.1": "Reads any 13.56 MHz ISO-14443A card's UID, ATQA, SAK and derived card type. Also the RC522 wiring check. A UID is broadcast in the clear — authorized / educational use only.",
+    "5.2": "Read-only dump of a presented card: authenticates each MIFARE Classic sector with the default key and dumps every readable block; reads Ultralight/NTAG pages directly. Never writes.",
+    "5.3": "Runs a MIFARE Classic card against a dictionary of common / factory / transport keys and grades it A–F by how many sectors fall. Pure read/auth — nothing is written or dumped.",
+    "5.4": "Teaching demo: read a SOURCE card you own, then write it to a magic card you own, to show why UID door systems are unsafe. Writes are GATED OFF in firmware by default; it refuses non-magic targets and never touches trailers.",
+    "5.5": "Decodes the first URI/Text NDEF record on an NTAG/Ultralight tag — the 'don't tap random NFC tags' demo. Writing is behind a firmware compile switch, off by default.",
+    "5.6": "Passive log of every card presented to the reader (UID, type, time, per-UID count) with a running distinct/total summary. UID-only; never authenticates or writes.",
     "7.1": "Drives a continuous 38kHz, 50% duty carrier on the IR LED. Check it with a phone camera or scope.",
     "7.2": "Records the raw mark/space timings of every IR burst the receiver sees.",
     "7.3": "Re-transmits the last capture from 7.2, 7.4 or 7.5 once (raw at 38kHz if the protocol is unknown), then returns to idle.",
@@ -258,13 +342,21 @@
       headerRow.innerHTML = IR_VIEWS[modId].headers.map(h => `<th>${h}</th>`).join("");
     } else if (NRF_VIEWS[modId]) {
       headerRow.innerHTML = NRF_VIEWS[modId].headers.map(h => `<th>${h}</th>`).join("");
+    } else if (RFID_VIEWS[modId]) {
+      headerRow.innerHTML = RFID_VIEWS[modId].headers.map(h => `<th>${h}</th>`).join("");
     } else {
       headerRow.innerHTML = `<th>Target / Name</th><th>UUID / Addr</th><th>State / RSSI</th><th>Payload / Status</th>`;
     }
 
     $("module-title").textContent = TITLES[modId];
     $("module-desc").textContent = DESCS[modId];
-    $("telemetry-body").innerHTML = `<tr><td colspan="4" class="empty">Awaiting hardware telemetry stream…</td></tr>`;
+    $("telemetry-body").innerHTML = EMPTY_ROW;
+
+    // 4.1 swaps the table for the spectrum graph; every other module uses the table.
+    const spectrumOn = modId === "4.1" && !!window.Spectrum;
+    document.querySelector(".table-scroll").hidden = spectrumOn;
+    if (window.Spectrum) { Spectrum.show(spectrumOn); if (spectrumOn) Spectrum.reset(); }
+
     appendLog(`Switched active context to Module ${modId}`, "sys");
   };
 
